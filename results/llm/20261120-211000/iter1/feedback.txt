@@ -1,0 +1,8 @@
+verdict: PASSED
+controller exit: finished normally
+envelope interventions (ticks where the cage overrode your command): slew=2
+achieved: angle range [20.0, 83.98] deg, peak speed 45.0 deg/s, max applied torque 1.627 N*m
+prescription tracking: {'cycles_completed': 2, 'mean_peak_deg': 84.0, 'mean_abs_error_vs_prescription_deg': 27.0}
+first cage events:
+  t=3.140s deadline_miss: no command before tick 1570 (deadline 2000 us)
+  t=3.140s slew_limit: torque jump -1.663 Nm in one tick, limit 0.120

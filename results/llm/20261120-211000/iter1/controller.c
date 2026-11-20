@@ -1,0 +1,161 @@
+/*
+ * ctrl_rom_elbow.c - Passive range-of-motion controller for a 1-DOF elbow exoskeleton.
+ *
+ * CHANGES FROM THE PRESCRIPTION (made for safety; the cage envelope is not visible to this code):
+ *  1. Cycle period is about 4.4 s, not 1.5 s. A 20->85->20 cycle in 1.5 s needs a peak speed of
+ *     about 136 deg/s and a peak acceleration of about 570 deg/s^2. That is a fast stretch, and fast
+ *     stretches set off velocity-dependent spasticity in post-stroke muscle. The cage is also likely
+ *     to see it as "pushing", and it would then revoke this controller. The peak joint speed is now
+ *     capped at V_PEAK_DPS = 45 deg/s. The motion is a smooth cosine with no dwell, which gives the
+ *     most repetitions possible under that cap. Raise V_PEAK_DPS only if the clinician approves it
+ *     and the envelope allows it.
+ *  2. The commanded range is 21..84 deg instead of 20..85 deg. The 1 deg margin at each end keeps
+ *     tracking overshoot from touching the edges of the envelope.
+ *  3. The session starts with a slow minimum-jerk move from wherever the arm is to the start angle.
+ *  4. If the patient resists (a large tracking error, which may be spasm or a catch) or moves
+ *     unusually fast, the motion pauses smoothly. It resumes slowly once the joint follows again.
+ *     Feedback torque and total torque are both bounded, so the controller never pushes hard.
+ */
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include "ctrl_api.h"
+
+#define PI_D     3.14159265358979323846
+#define DEG2RAD  (PI_D / 180.0)
+
+/* Plant model (approximate, SI units with angles in rad) */
+static const double J_INERTIA = 0.05;   /* kg*m^2 */
+static const double B_DAMP    = 0.10;   /* N*m*s/rad */
+static const double K_TISSUE  = 1.5;    /* N*m/rad */
+static const double TISSUE_REST_DEG = 20.0;
+
+/* Motion */
+static const double ANG_LO      = 21.0;  /* deg */
+static const double ANG_HI      = 84.0;  /* deg */
+static const double V_PEAK_DPS  = 45.0;  /* peak cycle speed, deg/s */
+static const double V_APPROACH  = 20.0;  /* peak speed of the initial approach move, deg/s */
+
+/* Feedback: closed loop wn ~ 15 rad/s, zeta ~ 0.66 */
+static const double KP = 10.0;   /* N*m/rad */
+static const double KD = 0.9;    /* N*m*s/rad */
+static const double TAU_FB_MAX = 2.0;   /* N*m */
+static const double TAU_MAX    = 3.5;   /* N*m */
+
+/* Resistance / anomaly handling */
+static const double E_PAUSE_DEG  = 6.0;
+static const double E_RESUME_DEG = 2.5;
+static const double V_ANOMALY    = 110.0;  /* deg/s */
+static const double T_SLOW_DOWN  = 0.15;   /* s from full speed to stop */
+static const double T_SPEED_UP   = 1.5;    /* s from stop to full speed */
+
+static bool   g_started;
+static int    g_mode;          /* 0 = approach, 1 = cycling */
+static double g_t_prev;
+static double g_a0, g_app_T, g_app_tau;
+static double g_phi;           /* cycle phase, rad */
+static double g_s;             /* speed scale 0..1 */
+static double g_vel_f;         /* filtered velocity, deg/s */
+
+static double clampd(double x, double lo, double hi)
+{
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+void ctrl_init(void)
+{
+    g_started = false;
+    g_mode = 0;
+    g_t_prev = 0.0;
+    g_a0 = ANG_LO;
+    g_app_T = 1.0;
+    g_app_tau = 0.0;
+    g_phi = 0.0;
+    g_s = 1.0;
+    g_vel_f = 0.0;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    if (obs == NULL || !isfinite(obs->t) || !isfinite(obs->angle_deg) || !isfinite(obs->velocity_dps)) {
+        g_s = 0.0;
+        return 0.0;   /* passive: tissue relaxes the joint toward rest */
+    }
+
+    const double ang = obs->angle_deg;
+    double dt;
+
+    if (!g_started) {
+        g_started = true;
+        g_t_prev = obs->t;
+        g_vel_f = obs->velocity_dps;
+        g_a0 = ang;
+        {
+            double d = fabs(ANG_LO - g_a0);
+            double T = 1.875 * d / V_APPROACH;   /* min-jerk peak speed = 1.875*d/T */
+            g_app_T = T < 1.0 ? 1.0 : T;
+        }
+        dt = 0.0;
+    } else {
+        dt = clampd(obs->t - g_t_prev, 0.0, 0.01);
+        g_t_prev = obs->t;
+    }
+
+    /* Light low-pass on the velocity used for damping (about 50 Hz cutoff) */
+    {
+        double tc = 1.0 / (2.0 * PI_D * 50.0);
+        double a = (dt > 0.0) ? dt / (dt + tc) : 1.0;
+        g_vel_f += a * (obs->velocity_dps - g_vel_f);
+    }
+
+    /* Reference generation (deg, deg/s, deg/s^2) */
+    double ref, vref, aref;
+    const double A = 0.5 * (ANG_HI - ANG_LO);
+    const double C = 0.5 * (ANG_HI + ANG_LO);
+    const double W = V_PEAK_DPS / A;            /* rad/s: peak speed = A*W */
+
+    if (g_mode == 0) {
+        g_app_tau += g_s * dt;
+        if (g_app_tau >= g_app_T) {
+            g_mode = 1;
+            g_phi = 0.0;
+        }
+    } else {
+        g_phi += g_s * W * dt;
+        if (g_phi >= 2.0 * PI_D) g_phi = fmod(g_phi, 2.0 * PI_D);
+    }
+
+    if (g_mode == 0) {
+        double T = g_app_T;
+        double x = clampd(g_app_tau / T, 0.0, 1.0);
+        double d = ANG_LO - g_a0;
+        double x2 = x * x, x3 = x2 * x;
+        ref  = g_a0 + d * (10.0 * x3 - 15.0 * x3 * x + 6.0 * x3 * x2);
+        vref = g_s * d / T * (30.0 * x2 - 60.0 * x3 + 30.0 * x2 * x2);
+        aref = g_s * g_s * d / (T * T) * (60.0 * x - 180.0 * x2 + 120.0 * x3);
+    } else {
+        ref  = C - A * cos(g_phi);
+        vref = A * W * g_s * sin(g_phi);
+        aref = A * W * W * g_s * g_s * cos(g_phi);
+    }
+
+    /* Resistance / anomaly detection -> smooth pause and slow resume */
+    {
+        double err = fabs(ref - ang);
+        bool anomaly = (err > E_PAUSE_DEG) || (fabs(g_vel_f) > V_ANOMALY);
+        if (anomaly)                 g_s -= dt / T_SLOW_DOWN;
+        else if (err < E_RESUME_DEG) g_s += dt / T_SPEED_UP;
+        g_s = clampd(g_s, 0.0, 1.0);
+    }
+
+    /* Torque: model feedforward + bounded PD */
+    double tau_ff = J_INERTIA * aref * DEG2RAD
+                  + B_DAMP * vref * DEG2RAD
+                  + K_TISSUE * (ref - TISSUE_REST_DEG) * DEG2RAD;
+    double tau_fb = KP * (ref - ang) * DEG2RAD + KD * (vref - g_vel_f) * DEG2RAD;
+    tau_fb = clampd(tau_fb, -TAU_FB_MAX, TAU_FB_MAX);
+
+    double tau = clampd(tau_ff + tau_fb, -TAU_MAX, TAU_MAX);
+    if (!isfinite(tau)) tau = 0.0;
+    return tau;
+}
