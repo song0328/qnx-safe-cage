@@ -78,6 +78,14 @@ goes back to the attacker. Logs: `results/redteam/`.
 - Priority bands: governor at FIFO 70, above the 63 a non-root process can reach.
 - POSIX resource limits on the caged process: `RLIMIT_CPU`, `RLIMIT_AS`, `RLIMIT_NPROC`, `RLIMIT_NOFILE`, `RLIMIT_CORE`.
 
+## Dashboard
+
+`python dashboard/server.py` then open http://localhost:8765. Live mode runs a controller on the QNX
+target and streams the governor's telemetry (50 Hz); AI mode runs the repair loop step by step; replay
+mode plays any recorded run from `results/`, so the dashboard also works without a QNX target.
+
+![dashboard, live run on QNX](docs/dashboard-live-light.png)
+
 ## Build and run (Windows host, QNX SDP 8.0)
 
 ```

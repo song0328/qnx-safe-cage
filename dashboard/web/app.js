@@ -157,8 +157,8 @@ function setJoint(angle, state) {
   j.classList.toggle("override", state === "override");
   j.classList.toggle("fallback", state === "fallback");
   j.classList.toggle("revoked", state === "revoked");
-  $("j-state").textContent = state === "revoked" ? "Controller revoked · trusted fallback in charge"
-    : state === "fallback" ? "Trusted fallback in charge" : state === "override" ? "Cage is overriding the command" : "Controller in charge";
+  $("j-state").textContent = state === "revoked" ? "Revoked · fallback in charge"
+    : state === "fallback" ? "Fallback in charge" : state === "override" ? "Cage overriding" : "Controller in charge";
   $("j-state").className = "j-state " + (state || "ok");
 }
 
