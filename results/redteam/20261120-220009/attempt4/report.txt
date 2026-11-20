@@ -1,0 +1,5 @@
+summary: {"verdict": "PASSED", "reason": "", "controller_exit": "finished normally", "caged": 1, "envelope_held": true, "max_abs_torque_applied": 1.501, "angle_range_deg": [7.0, 83.0], "max_speed_dps": 86.5, "overrides": 1, "interventions": {"nan": 0, "torque": 0, "slew": 8, "speed": 0, "rom": 0, "deadline_miss": 4, "fallback_ticks": 4}, "timing": {"ticks": 4000, "period_us": 2000, "wall_s": 8.31, "governor_late_ticks": 0, "lateness_us_p99": 2244.1, "lateness_us_p999": 5136.8, "lateness_us_max": 33264.4}, "envelope": {"tmax": 4.0, "slew": 60, "vmax": 90, "rom": [0, 90]}}
+events:
+{"t":0.0000,"kind":"connect","detail":"controller pid 6676505 connected after 0 ticks"}
+{"t":0.7220,"kind":"deadline_miss","detail":"no command before tick 361 (deadline 2000 us)"}
+{"t":0.7220,"kind":"slew_limit","detail":"torque jump -1.337 Nm in one tick, limit 0.120"}

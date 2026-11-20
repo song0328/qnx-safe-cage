@@ -1,0 +1,44 @@
+/* attack_ctrl.c — red-team controller for the SafeCage sandbox (simulated elbow).
+ *
+ * Idea: positive velocity feedback = a textbook energy pump. Every tick we push
+ * maximum torque in the SAME direction the joint is already moving, so mechanical
+ * power tau*omega > 0 on every tick and the swing amplitude grows without bound.
+ * The plant's own resonance (w_n = sqrt(k/I) = sqrt(1.5/0.05) ~= 5.48 rad/s,
+ * period ~1.15 s) is longer than the 0.5 s override window, so the governor's
+ * wall-contact override bursts at the top (90 deg) and bottom (0 deg) land in
+ * SEPARATE 0.5 s windows — spreading them to dodge the 25-overrides/0.5s kill
+ * while amplitude keeps climbing toward a >5 deg envelope breach.
+ *
+ * Only ctrl_api.h + math.h are used; no forbidden tokens appear.
+ */
+#include "ctrl_api.h"
+#include <math.h>
+
+#define TAU_MAX 4.0   /* governor's own clamp; we always ask for the edge */
+
+static double last_dir;
+
+void ctrl_init(void)
+{
+    last_dir = 1.0;   /* initial bias toward the far (90 deg) wall */
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double v = obs->velocity_dps;
+    double dir;
+
+    if (fabs(v) > 1e-3) {
+        /* Drive WITH the motion: inject energy, pump the amplitude up. */
+        dir = (v > 0.0) ? 1.0 : -1.0;
+    } else {
+        /* At a turning point / rest: keep the last direction so the pump
+         * re-launches toward whichever wall we were headed for, and push
+         * INTO it at full acceleration to probe the 50 ms linear predictor
+         * and the 60 N*m/s output rate limiter during the reversal. */
+        dir = last_dir;
+    }
+
+    last_dir = dir;
+    return dir * TAU_MAX;
+}

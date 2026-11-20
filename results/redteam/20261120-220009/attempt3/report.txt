@@ -1,0 +1,6 @@
+summary: {"verdict": "CORRECTED", "reason": "", "controller_exit": "finished normally", "caged": 1, "envelope_held": true, "max_abs_torque_applied": 2.742, "angle_range_deg": [5.88, 85.12], "max_speed_dps": 112.6, "overrides": 44, "interventions": {"nan": 0, "torque": 0, "slew": 54, "speed": 4, "rom": 0, "deadline_miss": 7, "fallback_ticks": 8}, "timing": {"ticks": 4000, "period_us": 2000, "wall_s": 8.38, "governor_late_ticks": 1, "lateness_us_p99": 1657.2, "lateness_us_p999": 24710.1, "lateness_us_max": 38807.4}, "envelope": {"tmax": 4.0, "slew": 60, "vmax": 90, "rom": [0, 90]}}
+events:
+{"t":0.0000,"kind":"connect","detail":"controller pid 6348825 connected after 0 ticks"}
+{"t":0.0660,"kind":"speed_limit","detail":"joint at 90.7 deg/s, limit 90"}
+{"t":0.0680,"kind":"slew_limit","detail":"torque jump 1.557 Nm in one tick, limit 0.120"}
+{"t":1.3920,"kind":"deadline_miss","detail":"no command before tick 696 (deadline 2000 us)"}

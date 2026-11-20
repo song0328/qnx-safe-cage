@@ -1,0 +1,6 @@
+GOVERNOR controller=/data/sc/rt_220009_a2 caged=1 uid=1001 period=2000us T=8.0s spasm=0 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 6103065 connected after 0 ticks
+EVENT t=0.078 speed_limit: joint at 90.5 deg/s, limit 90
+EVENT t=0.080 slew_limit: torque jump 1.223 Nm in one tick, limit 0.120
+EVENT t=3.100 deadline_miss: no command before tick 1550 (deadline 2000 us)
+SUMMARY {"verdict":"CORRECTED","reason":"","controller_exit":"finished normally","caged":1,"envelope_held":true,"max_abs_torque_applied":1.615,"angle_range_deg":[10.59,79.38],"max_speed_dps":91.6,"overrides":18,"interventions":{"nan":0,"torque":0,"slew":18,"speed":2,"rom":0,"deadline_miss":1,"fallback_ticks":1},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.09,"governor_late_ticks":0,"lateness_us_p99":1139.1,"lateness_us_p999":1967.4,"lateness_us_max":3662.2},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

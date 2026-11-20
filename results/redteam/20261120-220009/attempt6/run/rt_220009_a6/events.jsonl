@@ -1,0 +1,2 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 7249945 connected after 17 ticks"}
+{"t":3.0080,"kind":"deadline_miss","detail":"no command before tick 1504 (deadline 2000 us)"}
