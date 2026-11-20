@@ -74,6 +74,7 @@ goes back to the attacker. Logs: `results/redteam/`.
 - Native synchronous message passing on a fixed-priority channel: `ChannelCreate(_NTO_CHF_FIXED_PRIORITY)`, `MsgReceive`, `MsgReply` in `qnx/governor.c`; `ConnectAttach`, `MsgSend` in `qnx/ctrl_main.c`.
 - Timer pulses for the control tick: `SIGEV_PULSE_INIT`, `timer_create` in `qnx/governor.c`.
 - QNX abilities: `procmgr_ability()` with `PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK | PROCMGR_AOP_INHERIT_YES` for fork, and spawn locked from outside after exec (`lock_spawn()`).
+- A QNX resource manager (`qnx/resmgr.c`: `resmgr_attach`, `iofunc_*`, `dispatch_*`): `cat /dev/safecage/status` shows the live cage state as JSON from any shell; `echo stop > /dev/safecage/ctl` is an operator emergency stop that revokes the controller. `ctl` is mode 0200, so a non-root user (tested as uid 1002) gets "Permission denied" while still being able to read the status.
 - Priority bands: governor at FIFO 70, above the 63 a non-root process can reach.
 - POSIX resource limits on the caged process: `RLIMIT_CPU`, `RLIMIT_AS`, `RLIMIT_NPROC`, `RLIMIT_NOFILE`, `RLIMIT_CORE`.
 
