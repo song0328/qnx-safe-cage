@@ -1,0 +1,20 @@
+COMPILE FAILED:
+:28: error: request for member 'velocity_dps' in something not a structure or union
+   72 |                isfinite(obs->velocity_dps);
+      |                            ^~
+D:\qnx-safe-cage\results\llm\20261120-225001\iter1\controller.c:72:28: error: request for member 'velocity_dps' in something not a structure or union
+   72 |                isfinite(obs->velocity_dps);
+      |                            ^~
+D:\qnx-safe-cage\results\llm\20261120-225001\iter1\controller.c:72:28: error: request for member 'velocity_dps' in something not a structure or union
+   72 |                isfinite(obs->velocity_dps);
+      |                            ^~
+D:\qnx-safe-cage\results\llm\20261120-225001\iter1\controller.c:74:28: error: request for member 't' in something not a structure or union
+   74 |     t = (obs != NULL) ? obs->t : 0.0;
+      |                            ^~
+D:\qnx-safe-cage\results\llm\20261120-225001\iter1\controller.c:110:34: error: request for member 'angle_deg' in something not a structure or union
+  110 |         double e  = (th_ref - obs->angle_deg) * CT_DEG2RAD;
+      |                                  ^~
+D:\qnx-safe-cage\results\llm\20261120-225001\iter1\controller.c:111:34: error: request for member 'velocity_dps' in something not a structure or union
+  111 |         double de = (om_ref - obs->velocity_dps) * CT_DEG2RAD;
+      |                                  ^~
+cc: D:/qnx/qnx800/host/win64/x86_64/usr/lib/gcc/x86_64-pc-nto-qnx8.0.0/12.2.0/cc1 caught signal 1

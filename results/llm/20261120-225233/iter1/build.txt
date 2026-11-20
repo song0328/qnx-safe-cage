@@ -1,0 +1,25 @@
+D:\qnx-safe-cage>qcc -Vgcc_ntox86_64 -O2 -Wall -I"D:\qnx-safe-cage\qnx" -o "D:\qnx-safe-cage\build\x86_64\llm_225233_i1" "D:\qnx-safe-cage\qnx\ctrl_main.c" "D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c" -lm 
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:85:24: error: unknown type name 'sc_obs_t'
+   85 | double ctrl_step(const sc_obs_t *obs)
+      |                        ^~~~~~~~
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c: In function 'ctrl_step':
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:93:16: error: 'NULL' undeclared (first use in this function)
+   93 |     if (obs == NULL) return 0.0;
+      |                ^~~~
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:20:1: note: 'NULL' is defined in header '<stddef.h>'; did you forget to '#include <stddef.h>'?
+   19 | #include <stdbool.h>
+  +++ |+#include <stddef.h>
+   20 | 
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:93:16: note: each undeclared identifier is reported only once for each function it appears in
+   93 |     if (obs == NULL) return 0.0;
+      |                ^~~~
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:94:12: error: request for member 't' in something not a structure or union
+   94 |     t = obs->t; q = obs->angle_deg; qd = obs->velocity_dps;
+      |            ^~
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:94:24: error: request for member 'angle_deg' in something not a structure or union
+   94 |     t = obs->t; q = obs->angle_deg; qd = obs->velocity_dps;
+      |                        ^~
+D:\qnx-safe-cage\results\llm\20261120-225233\iter1\controller.c:94:45: error: request for member 'velocity_dps' in something not a structure or union
+   94 |     t = obs->t; q = obs->angle_deg; qd = obs->velocity_dps;
+      |                                             ^~
+cc: D:/qnx/qnx800/host/win64/x86_64/usr/lib/gcc/x86_64-pc-nto-qnx8.0.0/12.2.0/cc1 caught signal 1

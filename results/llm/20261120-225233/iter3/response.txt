@@ -1,0 +1,240 @@
+```c
+/* elbow_prom_ctrl.c - passive range-of-motion controller, 1-DOF elbow exoskeleton.
+ *
+ * WHAT I CHANGED FROM THE PRESCRIPTION, AND WHY:
+ *  The prescription asks for 20 -> 85 -> 20 deg (65 deg each way) every 1.5 s. Each 65 deg
+ *  stroke then has to happen in 0.75 s, so it averages 86.7 deg/s. The cage's speed limit is
+ *  90 deg/s (seen in its report). A smooth motion can't cover that distance under that limit,
+ *  since even instant reversals would need about 87 deg/s for the whole stroke. The protocol
+ *  says the timing must not change, so I KEPT THE 1.5 s PERIOD and REDUCED THE RANGE instead:
+ *  about 20 -> 65 deg (about 45 deg each way). The profile moves at a steady 70 deg/s and turns
+ *  around smoothly at each end, which gives more range than a sine wave at the same peak speed.
+ *  The clinician should confirm this change.
+ *
+ *  Other safety behaviour:
+ *   - Soft start: from the arm's starting angle to 20 deg over 1 s, then the range grows to
+ *     full over 6 s.
+ *   - The output torque is limited to 0.08 N*m per tick (the cage allows 0.12) and capped
+ *     at 3 N*m.
+ *   - Speed guard: above 72 deg/s the controller adds braking torque, so the joint stays
+ *     well under 90 deg/s.
+ *   - If the joint keeps lagging behind (resistance or spasticity), the range shrinks.
+ *     It never drops below 30 %, and it recovers slowly. The period never changes.
+ *   - If the input is not finite or obs is NULL, the torque ramps down to 0 without a jump.
+ */
+#include <stddef.h>
+#include <math.h>
+#include <stdbool.h>
+
+#ifndef SAFECAGE_CTRL_API_H
+#define SAFECAGE_CTRL_API_H
+typedef struct {
+    double t;
+    double angle_deg;
+    double velocity_dps;
+} sc_obs_t;
+void ctrl_init(void);
+double ctrl_step(const sc_obs_t *obs);
+#endif
+
+#define PI_D        3.14159265358979323846
+#define D2R         (PI_D / 180.0)
+
+/* prescription (period kept) */
+#define REST_DEG    20.0
+#define PERIOD_S    1.5
+#define HALF_S      (0.5 * PERIOD_S)
+
+/* motion profile: steady speed with smooth sine-shaped turnarounds */
+#define V_CRUISE    70.0     /* deg/s, well below the 90 deg/s cage limit */
+#define T_BLEND     0.15     /* s, half-width of each turnaround */
+
+/* plant model (feedforward) */
+#define J_INERTIA   0.05
+#define B_VISC      0.1
+#define K_TISSUE    1.5
+
+/* feedback */
+#define KP           15.0    /* N*m/rad */
+#define KD           1.0     /* N*m*s/rad */
+#define ERR_SAT_DEG  8.0
+#define VERR_SAT_DPS 40.0
+
+/* output limits */
+#define TAU_MAX      3.0     /* N*m */
+#define SLEW_MAX     0.08    /* N*m per tick */
+
+/* speed guard */
+#define V_GUARD      72.0    /* deg/s */
+#define K_GUARD      4.0     /* N*m per rad/s above V_GUARD */
+
+/* start-up */
+#define T_BASE      1.0
+#define T_RAMP      6.0
+
+/* range back-off when tracking is poor */
+#define ERR_FILT_TAU   0.1
+#define ERR_HIGH_DEG   6.0
+#define ERR_LOW_DEG    3.0
+#define AMP_DOWN_RATE  0.1   /* 1/s */
+#define AMP_UP_RATE    0.03  /* 1/s */
+#define AMP_MIN        0.3
+
+static bool   g_started;
+static double g_t0, g_tprev, g_angle0, g_err_f, g_amp_scale, g_tau_prev;
+
+static double clampd(double x, double lo, double hi)
+{
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+static double slew_out(double tau)
+{
+    double out;
+    if (!isfinite(tau)) tau = 0.0;
+    tau = clampd(tau, -TAU_MAX, TAU_MAX);
+    out = clampd(tau, g_tau_prev - SLEW_MAX, g_tau_prev + SLEW_MAX);
+    if (!isfinite(out)) out = 0.0;
+    g_tau_prev = out;
+    return out;
+}
+
+/* quintic smoothstep over [0,T]: value, first and second time derivatives */
+static void smooth5(double t, double T, double *s, double *sd, double *sdd)
+{
+    double x = t / T;
+    if (x <= 0.0) { *s = 0.0; *sd = 0.0; *sdd = 0.0; return; }
+    if (x >= 1.0) { *s = 1.0; *sd = 0.0; *sdd = 0.0; return; }
+    {
+        double x2 = x * x, x3 = x2 * x;
+        *s   = x3 * (10.0 - 15.0 * x + 6.0 * x2);
+        *sd  = 30.0 * x2 * (1.0 - 2.0 * x + x2) / T;
+        *sdd = 60.0 * x * (1.0 - 3.0 * x + 2.0 * x2) / (T * T);
+    }
+}
+
+/* Full stroke distance of the profile. */
+static double stroke_deg(void)
+{
+    return V_CRUISE * (HALF_S - 2.0 * T_BLEND + 4.0 * T_BLEND / PI_D);
+}
+
+/* Upward half-stroke, tau in [0, HALF_S]: 0 -> stroke_deg(). */
+static void up_half(double tau, double *x, double *xd, double *xdd)
+{
+    const double a = PI_D / (2.0 * T_BLEND);
+    const double D = stroke_deg();
+    if (tau < T_BLEND) {
+        *x   = (V_CRUISE / a) * (1.0 - cos(a * tau));
+        *xd  = V_CRUISE * sin(a * tau);
+        *xdd = V_CRUISE * a * cos(a * tau);
+    } else if (tau < HALF_S - T_BLEND) {
+        *x   = V_CRUISE / a + V_CRUISE * (tau - T_BLEND);
+        *xd  = V_CRUISE;
+        *xdd = 0.0;
+    } else {
+        double u = HALF_S - tau;
+        if (u < 0.0) u = 0.0;
+        *x   = D - (V_CRUISE / a) * (1.0 - cos(a * u));
+        *xd  = V_CRUISE * sin(a * u);
+        *xdd = -V_CRUISE * a * cos(a * u);
+    }
+}
+
+/* Full cycle: up then mirrored down, period PERIOD_S. */
+static void cycle_profile(double tl, double *x, double *xd, double *xdd)
+{
+    double tau = fmod(tl, PERIOD_S);
+    if (tau < 0.0) tau += PERIOD_S;
+    if (tau <= HALF_S) {
+        up_half(tau, x, xd, xdd);
+    } else {
+        up_half(PERIOD_S - tau, x, xd, xdd);
+        *xd = -*xd;
+    }
+}
+
+void ctrl_init(void)
+{
+    g_started   = false;
+    g_t0        = 0.0;
+    g_tprev     = 0.0;
+    g_angle0    = REST_DEG;
+    g_err_f     = 0.0;
+    g_amp_scale = 1.0;
+    g_tau_prev  = 0.0;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double t, q, qd, tl, dt;
+    double sb, sbd, sbdd, sr, srd, srdd;
+    double base, based, basedd;
+    double p, pd, pdd, S;
+    double qr, qrd, qrdd, e, ed, tau, alpha;
+
+    if (obs == NULL) return slew_out(0.0);
+    t  = obs->t;
+    q  = obs->angle_deg;
+    qd = obs->velocity_dps;
+    if (!isfinite(t) || !isfinite(q) || !isfinite(qd)) return slew_out(0.0);
+
+    if (!g_started) {
+        g_started = true;
+        g_t0 = t;
+        g_tprev = t;
+        g_angle0 = clampd(q, 0.0, 120.0);
+    }
+    tl = t - g_t0;
+    if (tl < 0.0) tl = 0.0;
+    dt = clampd(t - g_tprev, 0.0, 0.01);
+    g_tprev = t;
+
+    /* base: blend from the starting angle to REST */
+    smooth5(tl, T_BASE, &sb, &sbd, &sbdd);
+    base   = g_angle0 + (REST_DEG - g_angle0) * sb;
+    based  = (REST_DEG - g_angle0) * sbd;
+    basedd = (REST_DEG - g_angle0) * sbdd;
+
+    /* cyclic motion with fixed 1.5 s period; range ramps in and may back off */
+    cycle_profile(tl, &p, &pd, &pdd);
+    smooth5(tl, T_RAMP, &sr, &srd, &srdd);
+    S = g_amp_scale;
+
+    qr   = base   + S * sr * p;
+    qrd  = based  + S * (srd * p + sr * pd);
+    qrdd = basedd + S * (srdd * p + 2.0 * srd * pd + sr * pdd);
+
+    /* feedforward from plant model + bounded PD */
+    e  = clampd(qr - q, -ERR_SAT_DEG, ERR_SAT_DEG);
+    ed = clampd(qrd - qd, -VERR_SAT_DPS, VERR_SAT_DPS);
+
+    tau = J_INERTIA * qrdd * D2R
+        + B_VISC * qrd * D2R
+        + K_TISSUE * (qr - REST_DEG) * D2R
+        + KP * e * D2R
+        + KD * ed * D2R;
+
+    /* speed guard: brake well before the cage's 90 deg/s limit */
+    if (qd > V_GUARD)
+        tau -= K_GUARD * (qd - V_GUARD) * D2R;
+    else if (qd < -V_GUARD)
+        tau -= K_GUARD * (qd + V_GUARD) * D2R;
+
+    /* back off the range (never the period) when tracking is persistently poor */
+    alpha = clampd(dt / ERR_FILT_TAU, 0.0, 1.0);
+    g_err_f += alpha * (fabs(qr - q) - g_err_f);
+    if (tl > T_BASE) {
+        if (g_err_f > ERR_HIGH_DEG)
+            g_amp_scale -= AMP_DOWN_RATE * dt;
+        else if (g_err_f < ERR_LOW_DEG)
+            g_amp_scale += AMP_UP_RATE * dt;
+        g_amp_scale = clampd(g_amp_scale, AMP_MIN, 1.0);
+    }
+
+    return slew_out(tau);
+}
+```
+I haven't compiled this or run it in the cage, so I can't tell you yet whether the cage accepts it.
+The period stays 1.5 s, but the range is now about 20→65 deg: 65 deg each way in 0.75 s can't stay under the 90 deg/s speed limit, so the clinician should confirm this.
+I set the output torque change to at most 0.08 N·m per tick (cage limit 0.12) and added braking above 72 deg/s.

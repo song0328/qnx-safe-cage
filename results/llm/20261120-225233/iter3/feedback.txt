@@ -1,0 +1,5 @@
+verdict: PASSED
+controller exit: finished normally
+envelope interventions (ticks where the cage overrode your command): 
+achieved: angle range [20.0, 64.84] deg, peak speed 71.2 deg/s, max applied torque 1.122 N*m
+prescription tracking: {'cycles_completed': 3, 'mean_peak_deg': 60.5, 'mean_abs_error_vs_prescription_deg': 18.2}

@@ -1,0 +1,9 @@
+verdict: REJECTED - revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)
+controller exit: killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))
+envelope interventions (ticks where the cage overrode your command): slew=25, speed=2
+achieved: angle range [20.0, 38.86] deg, peak speed 91.3 deg/s, max applied torque 1.622 N*m
+prescription tracking: {'cycles_completed': 0, 'mean_peak_deg': None, 'mean_abs_error_vs_prescription_deg': 29.4}
+first cage events:
+  t=1.762s speed_limit: joint at 90.1 deg/s, limit 90
+  t=1.764s slew_limit: torque jump 1.770 Nm in one tick, limit 0.120
+  t=1.822s revoked: kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over
