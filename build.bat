@@ -8,7 +8,7 @@ set ROOT=%~dp0
 set OUT=%ROOT%build\x86_64
 if not exist "%OUT%" mkdir "%OUT%"
 set CC=qcc -Vgcc_ntox86_64 -O2 -Wall -I"%ROOT%qnx"
-%CC% -o "%OUT%\governor" "%ROOT%qnx\governor.c" -lm || (echo BUILD FAIL governor & exit /b 1)
+%CC% -o "%OUT%\governor" "%ROOT%qnx\governor.c" "%ROOT%qnx\resmgr.c" -lm || (echo BUILD FAIL governor & exit /b 1)
 echo built governor
 for %%f in ("%ROOT%controllers\*.c") do (
   %CC% -o "%OUT%\%%~nf" "%ROOT%qnx\ctrl_main.c" "%%f" -lm || (echo BUILD FAIL %%~nf & exit /b 1)

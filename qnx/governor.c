@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include "common.h"
+#include "resmgr.h"
 
 /* ---- safety envelope (set by a clinician, NOT by the controller) ---- */
 #define TMAX        4.0     /* N*m, absolute torque limit */
@@ -145,9 +146,9 @@ static int cmp_f(const void *a, const void *b) {
 
 int main(int argc, char **argv) {
     const char *ctrl = NULL, *outdir = "/dev/shmem/sc_out";
-    double T = 10.0; long period_us = 2000; int spasm = 0, caged = 1, uid = 1001;
+    double T = 10.0; long period_us = 2000; int spasm = 0, caged = 1, uid = 1001, live = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "c:T:p:sUu:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "c:T:p:sUu:o:L")) != -1) {
         switch (opt) {
         case 'c': ctrl = optarg; break;
         case 'T': T = atof(optarg); break;
@@ -156,6 +157,7 @@ int main(int argc, char **argv) {
         case 'U': caged = 0; break;
         case 'u': uid = atoi(optarg); break;
         case 'o': outdir = optarg; break;
+        case 'L': live = 1; break;
         default: fprintf(stderr, "usage: %s -c controller [-T s] [-p us] [-s] [-U] [-u uid] [-o dir]\n", argv[0]); return 2;
         }
     }
@@ -186,6 +188,8 @@ int main(int argc, char **argv) {
 
     pid_t cpid = spawn_controller(ctrl, caged, uid, T, chid);
     if (cpid == -1) { perror("governor: fork"); return 1; }
+    /* only now (after fork) may the governor become multithreaded */
+    int rm_ok = sc_resmgr_start() == 0;
 
     struct sigevent ev;
     SIGEV_PULSE_INIT(&ev, self, GOV_PRIO, PULSE_TICK, 0);
@@ -204,6 +208,7 @@ int main(int argc, char **argv) {
     long k = 0, wait_ticks = 0;
     long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0;
     long n_ovr = 0, miss_streak = 0, first_seen = 0, prev_fallback = 1;
+    unsigned live_flags = 0; double live_late = 0;
     static unsigned char ovr_ring[WIN_TICKS]; long ovr_win = 0;
     char verdict_reason[256] = "";
     char ctrl_exit[160] = "still running at end of session";
@@ -340,6 +345,27 @@ int main(int argc, char **argv) {
         sim_t = (k + 1) * dt;
 
         rows[k] = (row_t){ (float)sim_t, (float)(th * R2D), (float)(om * R2D), (float)tau_req, (float)tau, flags, (float)late_us };
+
+        if (rm_ok && k % 25 == 0) {
+            char st[SC_STATUS_MAX];
+            snprintf(st, sizeof st, "{\"controller\":\"%s\",\"state\":\"%s\",\"t\":%.2f,\"angle_deg\":%.1f,"
+                     "\"speed_dps\":%.1f,\"torque_nm\":%.2f,\"overrides\":%ld,\"deadline_misses\":%ld,\"reason\":\"%s\"}",
+                     ctrl, revoked ? "revoked" : alive ? (using_ctrl ? "controller" : "fallback") : "controller_gone",
+                     sim_t, th * R2D, om * R2D, tau, n_ovr, n_miss, verdict_reason);
+            sc_resmgr_publish(st);
+        }
+
+        /* live telemetry for the dashboard: one line every 10 ticks, flags OR-ed over those ticks */
+        live_flags |= flags;
+        if (late_us > live_late) live_late = late_us;
+        if (live && (k + 1) % 10 == 0) {
+            char rq[32];
+            if (isfinite(tau_req)) snprintf(rq, sizeof rq, "%.3f", tau_req); else snprintf(rq, sizeof rq, "null");
+            printf("TLM {\"t\":%.3f,\"a\":%.2f,\"v\":%.1f,\"rq\":%s,\"ap\":%.3f,\"f\":%u,\"o\":%ld,\"l\":%.0f}\n",
+                   sim_t, th * R2D, om * R2D, rq, tau, live_flags, n_ovr, live_late);
+            fflush(stdout);
+            live_flags = 0; live_late = 0;
+        }
         lates[k] = (float)late_us;
         k++;
 
@@ -350,6 +376,7 @@ int main(int argc, char **argv) {
             else if (ovr_win > KILL_WIN_OVR) why = "kept pushing against the safety envelope (too many overrides within 0.5 s)";
             else if (n_ovr > KILL_TOTAL_OVR) why = "accumulated too many safety overrides over the session";
             else if (miss_streak > KILL_MISS_STREAK) why = "stopped answering within the control deadline";
+            else if (sc_resmgr_estop_requested()) why = "operator emergency stop via /dev/safecage/ctl";
             else if (caged && k % 10 == 0) {               /* did it try to climb out of its priority? */
                 struct sched_param cp;
                 if (sched_getparam(cpid, &cp) == 0 && cp.sched_priority > CAGE_PRIO) {

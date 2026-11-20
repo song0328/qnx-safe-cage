@@ -7,3 +7,4 @@ __pycache__/
 !results/llm/
 !results/v1-suite/
 !results/redteam/
+!results/llm-old/

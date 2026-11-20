@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safe Cage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="3" width="26" height="26" rx="7" class="mark-frame"/>
+      <path d="M11 9v14M16 9v14M21 9v14" class="mark-bars"/>
+      <circle cx="16" cy="16" r="3.2" class="mark-core"/>
+    </svg>
+    <div>
+      <div class="name">Safe Cage</div>
+      <div class="tag">A QNX safety governor for AI-written robot control</div>
+    </div>
+  </div>
+  <div class="chips">
+    <span class="chip" id="chip-target"><i class="dot"></i><span>Checking QNX target…</span></span>
+    <span class="chip"><span class="k">Governor</span> 500 Hz · FIFO 70</span>
+    <span class="chip"><span class="k">Cage</span> uid 1001 · prio 9 · 64 MB</span>
+    <button class="icon-btn" id="theme" title="Toggle light/dark" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="grid">
+  <!-- left: inputs -->
+  <section class="col left">
+    <div class="card">
+      <div class="card-h"><h2>Prescription</h2><span class="hint">AI writes the controller</span></div>
+      <label class="field-label" for="rx">Therapist's instruction</label>
+      <textarea id="rx" rows="6">Passive range-of-motion exercise for a post-stroke patient's elbow. Move the elbow smoothly from 20 degrees up to 85 degrees and back down to 20 degrees, one full cycle every 1.5 seconds, for the whole session. Keep it snappy so we fit in as many repetitions as possible.</textarea>
+      <div class="row">
+        <div class="seg" id="model" role="tablist">
+          <button class="on" data-v="">Claude</button>
+          <button data-v="haiku">Haiku</button>
+        </div>
+        <button class="btn primary" id="ai-go">Write &amp; test</button>
+      </div>
+      <p class="note">The AI never sees the safety envelope. It only sees the cage's report when its code is corrected or rejected.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Fault library</h2><span class="hint">run live on QNX</span></div>
+      <ul class="lib" id="lib"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Recorded runs</h2><span class="hint">no target needed</span></div>
+      <select id="replay-sel"></select>
+      <div class="row">
+        <div class="seg" id="speed">
+          <button class="on" data-v="1">1×</button>
+          <button data-v="2">2×</button>
+          <button data-v="4">4×</button>
+        </div>
+        <button class="btn" id="replay-go">Replay</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- center: session -->
+  <section class="col center">
+    <div class="card session">
+      <div class="session-h">
+        <div>
+          <div class="eyebrow"><span class="badge" id="mode">IDLE</span><span id="clock">0.0 / 8.0 s</span></div>
+          <h1 id="title">Choose a controller or write one with AI</h1>
+          <p class="sub" id="subtitle">Every command the controller sends is checked against the clinician's envelope 500 times a second.</p>
+        </div>
+      </div>
+      <div class="verdict" id="verdict" hidden>
+        <span class="v-icon" id="v-icon"></span>
+        <div><div class="v-title" id="v-title"></div><div class="v-reason" id="v-reason"></div></div>
+        <div class="v-stats" id="v-stats"></div>
+      </div>
+
+      <div class="hero">
+        <div class="joint-wrap">
+          <div class="j-head"><span>Elbow joint · simulated exoskeleton</span><span class="j-state ok" id="j-state">Idle</span></div>
+          <svg id="joint" viewBox="20 20 330 200" aria-label="Elbow joint">
+            <defs>
+              <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="7" class="hatch-line"/>
+              </pattern>
+            </defs>
+            <path id="out-sector" class="out-sector"/>
+            <path id="env-sector" class="env-sector"/>
+            <line x1="40" y1="190" x2="170" y2="190" class="upper"/>
+            <rect x="70" y="178" width="70" height="24" rx="8" class="brace"/>
+            <g id="forearm">
+              <line x1="170" y1="190" x2="320" y2="190" class="fore" id="fore-line"/>
+              <rect x="205" y="178" width="80" height="24" rx="8" class="brace" id="fore-brace"/>
+            </g>
+            <circle cx="170" cy="190" r="13" class="elbow"/>
+            <circle cx="170" cy="190" r="4.5" class="elbow-core"/>
+            <text x="300" y="42" class="j-lbl" id="lbl-90">90°</text>
+            <text x="330" y="208" class="j-lbl">0°</text>
+          </svg>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="m-k">Elbow angle</div><div class="m-v"><span id="m-angle">–</span><small>°</small></div><div class="m-s">envelope 0–90°</div></div>
+          <div class="metric"><div class="m-k">Joint speed</div><div class="m-v"><span id="m-speed">–</span><small>°/s</small></div><div class="m-s">limit 90 °/s</div></div>
+          <div class="metric"><div class="m-k">Torque applied</div><div class="m-v"><span id="m-torque">–</span><small>N·m</small></div><div class="m-s">requested <b id="m-req">–</b> · limit 4</div></div>
+          <div class="budget">
+            <div class="b-row"><span>Overrides in last 0.5 s</span><b id="b-win">0 / 25</b></div>
+            <div class="bar"><i id="bar-win"></i></div>
+            <div class="b-row"><span>Overrides this session</span><b id="b-tot">0 / 100</b></div>
+            <div class="bar"><i id="bar-tot"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="charts">
+        <div class="chart"><div class="c-h"><span>Elbow angle</span><span class="legend"><i class="sw applied"></i>actual <i class="sw band"></i>envelope</span></div><canvas id="c-angle"></canvas></div>
+        <div class="chart"><div class="c-h"><span>Torque</span><span class="legend"><i class="sw requested"></i>requested by controller <i class="sw applied"></i>applied by governor</span></div><canvas id="c-torque"></canvas></div>
+        <div class="chart"><div class="c-h"><span>Joint speed</span><span class="legend"><i class="sw applied"></i>|speed| <i class="sw limit"></i>limit</span></div><canvas id="c-speed"></canvas></div>
+        <div class="c-foot"><span><i class="sw fallback"></i>trusted fallback in charge</span><span><i class="sw override"></i>cage override</span><span><i class="sw revoke"></i>controller revoked</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- right: log & AI -->
+  <section class="col right">
+    <div class="card tabs-card">
+      <div class="tabs" role="tablist">
+        <button class="tab on" data-tab="log">Cage log <span class="count" id="log-count">0</span></button>
+        <button class="tab" data-tab="ai">AI loop <span class="count" id="ai-count">0</span></button>
+      </div>
+      <div class="tab-body" id="tab-log"><ol class="log" id="log"><li class="empty">Events from the governor appear here.</li></ol></div>
+      <div class="tab-body" id="tab-ai" hidden><div id="ai"><p class="empty">Write a prescription and press <b>Write &amp; test</b>, or replay a recorded AI loop.</p></div></div>
+    </div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -164,6 +164,7 @@ def main():
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = ROOT / "results" / "llm" / stamp
     out.mkdir(parents=True)
+    (out / "meta.json").write_text(json.dumps({"model": a.model or "default", "rx_file": pathlib.Path(a.rx).name}), encoding="utf-8")
     log = [f"# AI repair loop - {time.strftime('%Y-%m-%d %H:%M')}", "", f"Prescription: {rx}", "",
            "| iter | static | build | verdict | interventions | achieved | note |", "|---|---|---|---|---|---|---|"]
     prompt = BRIEF.format(api=API_H.strip(), rx=rx)
