@@ -1,0 +1,7 @@
+GOVERNOR controller=/data/sc/bad_mem caged=1 uid=1001 period=2000us T=8.0s spasm=0 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 6524953 connected after 0 ticks
+EVENT t=0.000 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120
+EVENT t=0.038 deadline_miss: no command before tick 19 (deadline 2000 us)
+EVENT t=0.118 speed_limit: joint at 90.6 deg/s, limit 90
+EVENT t=0.124 controller_died: memory protection fault (touched memory it does not own) [signal 11]
+SUMMARY {"verdict":"REJECTED","reason":"controller died: memory protection fault (touched memory it does not own) [signal 11]","controller_exit":"memory protection fault (touched memory it does not own) [signal 11]","caged":1,"envelope_held":true,"max_abs_torque_applied":0.997,"angle_range_deg":[20.00,29.80],"max_speed_dps":90.6,"interventions":{"nan":0,"torque":0,"slew":22,"speed":1,"rom":0,"deadline_miss":3,"fallback_ticks":3945},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.15,"governor_late_ticks":4,"lateness_us_p99":1230.2,"lateness_us_p999":7954.9,"lateness_us_max":30771.2},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

@@ -1,0 +1,7 @@
+GOVERNOR controller=/data/sc/bad_loop caged=1 uid=1001 period=2000us T=8.0s spasm=0 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 6107161 connected after 0 ticks
+EVENT t=0.000 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120
+EVENT t=0.110 speed_limit: joint at 90.8 deg/s, limit 90
+EVENT t=3.012 deadline_miss: no command before tick 1506 (deadline 2000 us)
+EVENT t=4.164 revoked: stopped answering within the control deadline; trusted fallback controller takes over
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: stopped answering within the control deadline","controller_exit":"killed by governor (stopped answering within the control deadline)","caged":1,"envelope_held":true,"max_abs_torque_applied":0.997,"angle_range_deg":[20.00,40.58],"max_speed_dps":90.8,"interventions":{"nan":0,"torque":0,"slew":23,"speed":1,"rom":0,"deadline_miss":101,"fallback_ticks":2499},"timing":{"ticks":4000,"period_us":2000,"wall_s":12.00,"governor_late_ticks":480,"lateness_us_p99":10636.3,"lateness_us_p999":22355.2,"lateness_us_max":35329.4},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

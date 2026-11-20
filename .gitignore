@@ -1,0 +1,5 @@
+build/
+results/*/
+!results/v0-suite/
+__pycache__/
+*.core
