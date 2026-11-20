@@ -162,7 +162,8 @@ def main():
     ap.add_argument("-T", type=float, default=8.0)
     a = ap.parse_args()
     rx = pathlib.Path(a.rx).read_text(encoding="utf-8").strip()
-    out = ROOT / "results" / "llm" / time.strftime("%Y%m%d-%H%M%S")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out = ROOT / "results" / "llm" / stamp
     out.mkdir(parents=True)
     log = [f"# AI repair loop - {time.strftime('%Y-%m-%d %H:%M')}", "", f"Prescription: {rx}", "",
            "| iter | static | build | verdict | interventions | achieved | note |", "|---|---|---|---|---|---|---|"]
@@ -186,15 +187,16 @@ def main():
             fb = feedback_text(None, None, static_problems=probs)
             log.append(f"| {n} | FAIL | - | - | - | - | {probs[0]} |")
         else:
-            ok, blog = build(src, f"llm_iter{n}")
+            name = f"llm_{stamp[-6:]}_i{n}"
+            ok, blog = build(src, name)
             (d / "build.txt").write_text(blog, encoding="utf-8")
             if not ok:
                 fb = feedback_text(None, None, build_log=blog)
                 log.append(f"| {n} | ok | FAIL | - | - | - | compile error |")
             else:
-                subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(ROOT / "build" / "x86_64" / f"llm_iter{n}"),
+                subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(ROOT / "build" / "x86_64" / name),
                                 f"{a.host}:/data/sc/"], timeout=120)
-                _, _, s, rd = run_one(a.host, f"llm_iter{n}", a.T, 2000, False, False, d / "run")
+                _, _, s, rd = run_one(a.host, name, a.T, 2000, False, False, d / "run")
                 if not s:
                     fb = "The run produced no result (the session did not finish)."
                     log.append(f"| {n} | ok | ok | NO_RESULT | - | - | - |")

@@ -140,13 +140,54 @@ def grid(root, names=None):
     return out
 
 
+def loop_figure(root, period=1.5, lo=20.0, hi=85.0, title=None):
+    """One row per iteration: joint angle vs the prescribed motion, and joint speed vs the limit."""
+    import math
+    root = pathlib.Path(root)
+    iters = sorted((p for p in root.glob("iter*") if list(p.glob("run/*/run.csv"))), key=lambda p: int(p.name[4:]))
+    fig, axes = plt.subplots(len(iters), 2, figsize=(11, 2.3 * len(iters)), sharex=True, squeeze=False,
+                             gridspec_kw={"width_ratios": [1.4, 1]})
+    for row, it in zip(axes, iters):
+        d = next(it.glob("run/*/"))
+        (t, ang, vel, treq, tapp, flags, late), s, ev = load(d)
+        target = [(lo + hi) / 2 - (hi - lo) / 2 * math.cos(2 * math.pi * ti / period) for ti in t]
+        a, b = row
+        a.plot(t, target, color=LIMIT, lw=1, ls=(0, (2, 2)), label="prescribed")
+        a.plot(t, ang, color=APPLIED, lw=1.8, label="actual")
+        a.set_ylim(-5, 100); a.set_ylabel("angle (deg)")
+        b.plot(t, [abs(v) for v in vel], color=APPLIED, lw=1.4)
+        b.axhline(90, color=CRITICAL, lw=1, ls=(0, (4, 3)))
+        b.set_ylim(0, 190); b.set_ylabel("|speed| (deg/s)")
+        iv = s["interventions"]
+        over = sum(iv.get(k, 0) for k in ("speed", "torque", "rom", "nan"))
+        clean = s["verdict"] == "PASSED" and over == 0
+        tag = "clean pass" if clean else (f"{over} safety overrides" if s["verdict"] == "PASSED" else s["verdict"])
+        a.set_title(f"{it.name}: {tag}", loc="left", fontsize=10, color=GOOD if clean else CRITICAL)
+        b.text(0.99, 0.95, f"peak {s['max_speed_dps']:.0f} deg/s", transform=b.transAxes, ha="right", va="top", fontsize=9, color=INK2)
+    axes[0][0].legend(loc="upper right", frameon=False, fontsize=8.5, ncol=2)
+    axes[0][1].text(0.01, 0.95, "speed limit 90", transform=axes[0][1].transAxes, va="top", fontsize=8.5, color=INK2)
+    for ax in axes[-1]:
+        ax.set_xlabel("time (s)")
+    if title:
+        fig.suptitle(title, x=0.02, ha="left", fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    out = root / "loop.png"
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path")
     ap.add_argument("--grid", action="store_true")
     ap.add_argument("--title")
+    ap.add_argument("--loop", action="store_true")
     a = ap.parse_args()
     order = ["good_rom", "bad_torque", "bad_nan", "bad_loop", "bad_slow", "bad_crash", "bad_mem", "bad_escape", "bad_hog"]
+    if a.loop:
+        print(loop_figure(a.path, title=a.title))
+        return
     if a.grid:
         root = pathlib.Path(a.path)
         names = [n for n in order if (root / n / "run.csv").exists()] or None

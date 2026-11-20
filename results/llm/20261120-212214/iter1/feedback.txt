@@ -1,0 +1,22 @@
+COMPILE FAILED:
+  !isfinite(obs->velocity_dps)) {
+      |                      ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:131:22: error: request for member 'velocity_dps' in something not a structure or union
+  131 |         !isfinite(obs->velocity_dps)) {
+      |                      ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:131:22: error: request for member 'velocity_dps' in something not a structure or union
+  131 |         !isfinite(obs->velocity_dps)) {
+      |                      ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:136:26: error: request for member 'angle_deg' in something not a structure or union
+  136 |     const double q  = obs->angle_deg;
+      |                          ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:137:26: error: request for member 'velocity_dps' in something not a structure or union
+  137 |     const double qd = obs->velocity_dps;
+      |                          ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:141:19: error: request for member 't' in something not a structure or union
+  141 |         s_t0 = obs->t;
+      |                   ^~
+D:\qnx-safe-cage\results\llm\20261120-212214\iter1\controller.c:149:20: error: request for member 't' in something not a structure or union
+  149 |     double tr = obs->t - s_t0;
+      |                    ^~
+cc: D:/qnx/qnx800/host/win64/x86_64/usr/lib/gcc/x86_64-pc-nto-qnx8.0.0/12.2.0/cc1 caught signal 1

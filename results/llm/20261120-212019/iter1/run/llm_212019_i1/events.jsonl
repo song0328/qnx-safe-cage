@@ -1,0 +1,4 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 10022937 connected after 0 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 0.498 Nm in one tick, limit 0.120"}
+{"t":0.1740,"kind":"speed_limit","detail":"joint at 90.8 deg/s, limit 90"}
+{"t":2.8740,"kind":"deadline_miss","detail":"no command before tick 1437 (deadline 2000 us)"}

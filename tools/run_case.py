@@ -31,12 +31,13 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir):
     rdir = f"/dev/shmem/sc_{ctrl}"
     flags = f"-T {T} -p {period}" + (" -s" if spasm else "") + (" -U" if uncaged else "")
     # run detached inside the target so a stalled SSH session cannot kill the run
-    cmd = (f"cd {REMOTE_DIR} && chmod 755 {REMOTE_DIR}/* && rm -rf {rdir} && ./governor -c {REMOTE_DIR}/{ctrl} {flags} -o {rdir} "
-           f"> {rdir}.out 2>&1; echo done")
+    # each step separately: removing a /dev/shmem directory can fail, and that must not skip the run
+    cmd = (f"cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; rm -f {rdir}.out {rdir}/*; "
+           f"./governor -c {REMOTE_DIR}/{ctrl} {flags} -o {rdir} > {rdir}.out 2>&1; echo rc=$?")
     t0 = time.time()
     try:
         r = ssh(host, cmd, timeout=T * 30 + 60)
-        ok = "done" in r.stdout
+        ok = "rc=0" in r.stdout
     except subprocess.TimeoutExpired:
         ok = False
     wall = time.time() - t0

@@ -1,0 +1,7 @@
+verdict: PASSED
+controller exit: finished normally
+envelope interventions (ticks where the cage overrode your command): 
+achieved: angle range [20.0, 85.0] deg, peak speed 76.1 deg/s, max applied torque 1.702 N*m
+prescription tracking: {'cycles_completed': 3, 'mean_peak_deg': 85.0, 'mean_abs_error_vs_prescription_deg': 28.3}
+first cage events:
+  t=3.124s deadline_miss: no command before tick 1562 (deadline 2000 us)

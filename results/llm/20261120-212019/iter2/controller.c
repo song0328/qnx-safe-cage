@@ -1,0 +1,144 @@
+/* Elbow passive range-of-motion controller.
+ * Stateless minimum-jerk reference + PD feedback, with an output rate guard.
+ *
+ * Changes from the prescription (the cage speed limit is 90 deg/s):
+ *  - Stroke time is 1.6 s (cycle 3.2 s), not 1.5 s (cycle). A 65 deg stroke in 0.75 s
+ *    needs a peak speed of at least 1.875*65/0.75 = 162 deg/s even for the smoothest
+ *    profile. At 1.6 s the peak is 1.875*65/1.6 = 76 deg/s, leaving margin for tracking
+ *    error. The shortest stroke under the limit is about 1.45 s, so the cycle cannot go
+ *    below about 2.9 s without the clinician raising the speed limit.
+ *  - "Snappy" (more repetitions) is NOT implemented. That needs a faster speed limit
+ *    approved by the clinician.
+ *  - Motion is minimum-jerk: zero speed and zero acceleration at both turnarounds and at
+ *    the start, so feedforward torque starts at zero and does not step.
+ *  - Output is limited to +/-2.5 N*m (assumed, to be checked against the clinician's
+ *    setting) and changes by at most 0.10 N*m per tick (cage slew limit is 0.12).
+ */
+
+#include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <float.h>
+#include <string.h>
+
+#include "ctrl_api.h"
+
+#define SC_PI            3.14159265358979323846
+#define SC_DEG2RAD       (SC_PI / 180.0)
+#define SC_STROKE_S      1.6                 /* one stroke, s (prescription: 0.75 s) */
+#define SC_START_DEG     20.0
+#define SC_END_DEG       85.0
+#define SC_SPAN_DEG      (SC_END_DEG - SC_START_DEG)
+#define SC_REST_DEG      20.0                /* tissue rest angle */
+
+/* Plant model, used for feedforward */
+#define SC_INERTIA       0.05   /* kg*m^2 */
+#define SC_DAMPING       0.1    /* N*m*s/rad */
+#define SC_STIFFNESS     1.5    /* N*m/rad, pulls toward 20 deg */
+
+/* Feedback gains (on tracking error) */
+#define SC_KP            10.0   /* N*m/rad */
+#define SC_KD            0.5    /* N*m*s/rad */
+
+#define SC_TAU_MAX       2.5    /* N*m, self-imposed limit (assumption) */
+#define SC_DTAU_MAX      0.10   /* N*m per tick, below cage slew limit 0.12 */
+
+static double s_prev_tau;
+
+void ctrl_init(void)
+{
+    s_prev_tau = 0.0;
+}
+
+/* Minimum-jerk profile on normalized time s in [0,1]:
+ * x = 0 -> 1, with zero velocity and acceleration at both ends. */
+static void minjerk(double s, double *x, double *dx, double *ddx)
+{
+    double s2 = s * s;
+    double s3 = s2 * s;
+    double s4 = s3 * s;
+    double s5 = s4 * s;
+
+    *x   = 10.0 * s3 - 15.0 * s4 + 6.0 * s5;
+    *dx  = 30.0 * s2 - 60.0 * s3 + 30.0 * s4;
+    *ddx = 60.0 * s - 180.0 * s2 + 120.0 * s3;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double period, phase, s, x, dx, ddx;
+    double dir, base_deg;
+    double ref_deg, ref_vel_dps, ref_acc_dps2;
+    double ref_rad, ref_vel_rad, ref_acc_rad;
+    double act_rad, act_vel_rad;
+    double tau_ff, tau_fb, tau;
+
+    if (obs == NULL ||
+        !isfinite(obs->t) || !isfinite(obs->angle_deg) || !isfinite(obs->velocity_dps)) {
+        /* Unusable input: ramp toward zero torque, within the rate guard. */
+        tau = 0.0;
+    } else {
+        /* Cycle: 20 -> 85 deg over SC_STROKE_S, then 85 -> 20 deg over SC_STROKE_S. */
+        period = 2.0 * SC_STROKE_S;
+        phase = fmod(obs->t, period);
+        if (phase < 0.0) {
+            phase += period;
+        }
+
+        if (phase < SC_STROKE_S) {
+            dir = 1.0;
+            base_deg = SC_START_DEG;
+            s = phase / SC_STROKE_S;
+        } else {
+            dir = -1.0;
+            base_deg = SC_END_DEG;
+            s = (phase - SC_STROKE_S) / SC_STROKE_S;
+        }
+
+        minjerk(s, &x, &dx, &ddx);
+
+        ref_deg       = base_deg + dir * SC_SPAN_DEG * x;
+        ref_vel_dps   = dir * SC_SPAN_DEG * dx / SC_STROKE_S;
+        ref_acc_dps2  = dir * SC_SPAN_DEG * ddx / (SC_STROKE_S * SC_STROKE_S);
+
+        ref_rad     = ref_deg * SC_DEG2RAD;
+        ref_vel_rad = ref_vel_dps * SC_DEG2RAD;
+        ref_acc_rad = ref_acc_dps2 * SC_DEG2RAD;
+
+        act_rad     = obs->angle_deg * SC_DEG2RAD;
+        act_vel_rad = obs->velocity_dps * SC_DEG2RAD;
+
+        /* Feedforward: inertia + damping + tissue spring along the reference. */
+        tau_ff = SC_INERTIA * ref_acc_rad
+               + SC_DAMPING * ref_vel_rad
+               + SC_STIFFNESS * (ref_rad - SC_REST_DEG * SC_DEG2RAD);
+
+        /* Feedback: PD on tracking error. */
+        tau_fb = SC_KP * (ref_rad - act_rad)
+               + SC_KD * (ref_vel_rad - act_vel_rad);
+
+        tau = tau_ff + tau_fb;
+    }
+
+    if (!isfinite(tau)) {
+        tau = 0.0;
+    }
+
+    /* Torque clamp (self-imposed). */
+    if (tau > SC_TAU_MAX) {
+        tau = SC_TAU_MAX;
+    } else if (tau < -SC_TAU_MAX) {
+        tau = -SC_TAU_MAX;
+    }
+
+    /* Rate guard: keep per-tick change below the cage slew limit. */
+    if (tau > s_prev_tau + SC_DTAU_MAX) {
+        tau = s_prev_tau + SC_DTAU_MAX;
+    } else if (tau < s_prev_tau - SC_DTAU_MAX) {
+        tau = s_prev_tau - SC_DTAU_MAX;
+    }
+
+    s_prev_tau = tau;
+    return tau;
+}

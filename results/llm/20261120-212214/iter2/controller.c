@@ -1,0 +1,232 @@
+/*
+ * ctrl_elbow_prom.c - passive range-of-motion controller, elbow, 1 DOF.
+ *
+ * Prescription: 20 deg -> 85 deg -> 20 deg, one cycle every 1.5 s, whole session.
+ * Profile: q = 20 + A*(1 - cos(2*pi*t/1.5))/2, A = 65 deg.
+ *   Peak velocity ~136 deg/s, peak torque ~2.1 N*m on the nominal plant.
+ *
+ * The 1.5 s period is NEVER changed. Deviations from the prescription:
+ *  1. Approach: the session starts wherever the arm is. The arm is first moved
+ *     smoothly to 20 deg (cosine blend, at most 60 deg/s, at least 1 s) before
+ *     the first cycle starts.
+ *  2. Warm-up: cycle 1 runs at 50% amplitude and cycle 2 at 80%. Full range
+ *     starts at cycle 3.
+ *  3. Self-limiting amplitude: the cage envelope is not visible to this code.
+ *     If a cycle cannot be followed, the amplitude is cut by 20% at the next
+ *     cycle start (floor 30%). "Cannot be followed" means a tracking error
+ *     above 10 deg, internal torque saturation, or a spastic catch. The bottom
+ *     stays at 20 deg and the timing stays 1.5 s. After 3 clean cycles, the
+ *     amplitude grows back by 5% at a time. This stops the controller from
+ *     pushing against the cage or against the patient.
+ *  4. Torque is capped at 4 N*m and slew-limited to 20 N*m/s. During a
+ *     detected catch, gains drop to 30% until the cycle ends at 20 deg.
+ * Clinical note: 136 deg/s peak is fast for a post-stroke (possibly spastic)
+ * elbow, and stretch reflexes depend on velocity. The therapist should
+ * confirm this speed.
+ */
+#include <math.h>
+#include <stddef.h>
+#include <stdbool.h>
+
+/* Interface types. Same include guard as ctrl_api.h, so this block is skipped
+ * if the runtime header was already included, and the layout is identical. */
+#ifndef SAFECAGE_CTRL_API_H
+#define SAFECAGE_CTRL_API_H
+typedef struct {
+    double t;             /* time since session start, s */
+    double angle_deg;     /* elbow joint angle, degrees (0 = straight) */
+    double velocity_dps;  /* joint velocity, degrees/s */
+} sc_obs_t;
+void ctrl_init(void);
+double ctrl_step(const sc_obs_t *obs);
+#endif
+
+#define PI_D          3.14159265358979323846
+#define DEG2RAD       (PI_D / 180.0)
+
+/* Prescription */
+#define Q_LOW_DEG     20.0
+#define Q_HIGH_DEG    85.0
+#define PERIOD_S      1.5
+
+/* Plant model (approximate) for feedforward */
+#define J_EST         0.05     /* kg*m^2   */
+#define B_EST         0.1      /* N*m*s/rad */
+#define K_EST         1.5      /* N*m/rad  */
+#define Q_REST_DEG    20.0
+
+/* Feedback */
+#define KP            30.0     /* N*m/rad  (wn ~ 24 rad/s) */
+#define KD            1.5      /* N*m*s/rad (zeta ~ 0.65)  */
+#define ERR_CLAMP_DEG 10.0     /* PD error clamp: no wind-up push */
+#define YIELD_GAIN    0.3
+
+/* Output limits */
+#define TAU_MAX       4.0      /* N*m */
+#define TAU_SLEW      0.04     /* N*m per 2 ms tick = 20 N*m/s */
+
+/* Supervision */
+#define CATCH_ERR_DEG      15.0
+#define RUNAWAY_DPS        250.0
+#define SAT_TICKS_YIELD    50       /* 100 ms continuous saturation */
+#define BAD_CYCLE_ERR_DEG  10.0
+#define GOOD_CYCLE_ERR_DEG 4.0
+#define SCALE_MIN          0.3
+#define SCALE_DOWN         0.8
+#define SCALE_UP           0.05
+#define GOOD_CYCLES_UP     3
+#define APPROACH_VMAX_DPS  60.0
+#define APPROACH_MIN_S     1.0
+
+static bool   s_init;
+static double s_t0;
+static double s_q_start;      /* deg */
+static double s_approach_T;   /* s   */
+static long   s_cycle;
+static double s_scale;        /* adaptive amplitude factor (0.3 .. 1) */
+static double s_cycle_peak_err;
+static bool   s_cycle_bad;
+static bool   s_yield;
+static int    s_sat_ticks;
+static int    s_good_cycles;
+static double s_tau_last;
+
+void ctrl_init(void)
+{
+    s_init = false;
+    s_t0 = 0.0;
+    s_q_start = Q_LOW_DEG;
+    s_approach_T = APPROACH_MIN_S;
+    s_cycle = -1;
+    s_scale = 1.0;
+    s_cycle_peak_err = 0.0;
+    s_cycle_bad = false;
+    s_yield = false;
+    s_sat_ticks = 0;
+    s_good_cycles = 0;
+    s_tau_last = 0.0;
+}
+
+static double clampd(double x, double lo, double hi)
+{
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+static double warmup_factor(long cycle)
+{
+    if (cycle <= 0) return 0.5;
+    if (cycle == 1) return 0.8;
+    return 1.0;
+}
+
+/* Called at each cycle boundary (reference is at 20 deg, zero velocity). */
+static void end_of_cycle_update(void)
+{
+    if (s_cycle_bad || s_cycle_peak_err > BAD_CYCLE_ERR_DEG) {
+        s_scale = clampd(s_scale * SCALE_DOWN, SCALE_MIN, 1.0);
+        s_good_cycles = 0;
+    } else if (s_cycle_peak_err < GOOD_CYCLE_ERR_DEG) {
+        if (++s_good_cycles >= GOOD_CYCLES_UP) {
+            s_scale = clampd(s_scale + SCALE_UP, SCALE_MIN, 1.0);
+            s_good_cycles = 0;
+        }
+    } else {
+        s_good_cycles = 0;
+    }
+    s_cycle_peak_err = 0.0;
+    s_cycle_bad = false;
+    s_yield = false;
+    s_sat_ticks = 0;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double q, qd, tr, r, rd, rdd, e_deg, ae, tau_ff, e, ed, g, tau;
+    bool cycling = false;
+
+    if (obs == NULL || !isfinite(obs->t) || !isfinite(obs->angle_deg) ||
+        !isfinite(obs->velocity_dps)) {
+        s_tau_last = 0.0;
+        return 0.0;
+    }
+
+    q  = obs->angle_deg;
+    qd = obs->velocity_dps;
+
+    if (!s_init) {
+        double d, T;
+        s_init = true;
+        s_t0 = obs->t;
+        s_q_start = q;
+        d = fabs(Q_LOW_DEG - q);
+        /* cosine blend peak velocity = (pi/2)*d/T */
+        T = (PI_D * 0.5) * d / APPROACH_VMAX_DPS;
+        s_approach_T = T > APPROACH_MIN_S ? T : APPROACH_MIN_S;
+    }
+
+    tr = obs->t - s_t0;
+    if (tr < 0.0) tr = 0.0;
+
+    if (tr < s_approach_T) {
+        /* Smooth approach to 20 deg */
+        double w = PI_D / s_approach_T;
+        double D = Q_LOW_DEG - s_q_start;
+        r   = s_q_start + D * 0.5 * (1.0 - cos(w * tr));
+        rd  = D * 0.5 * w * sin(w * tr);
+        rdd = D * 0.5 * w * w * cos(w * tr);
+    } else {
+        double tc, ph, w, A;
+        long n;
+        cycling = true;
+        tc = tr - s_approach_T;
+        n = (long)floor(tc / PERIOD_S);
+        if (n != s_cycle) {
+            if (s_cycle >= 0) end_of_cycle_update();
+            s_cycle = n;
+        }
+        ph = tc - (double)n * PERIOD_S;
+        w  = 2.0 * PI_D / PERIOD_S;
+        A  = (Q_HIGH_DEG - Q_LOW_DEG) * s_scale * warmup_factor(n);
+        r   = Q_LOW_DEG + A * 0.5 * (1.0 - cos(w * ph));
+        rd  = A * 0.5 * w * sin(w * ph);
+        rdd = A * 0.5 * w * w * cos(w * ph);
+    }
+
+    /* Supervision */
+    e_deg = r - q;
+    ae = fabs(e_deg);
+    if (cycling && ae > s_cycle_peak_err) s_cycle_peak_err = ae;
+    if (ae > CATCH_ERR_DEG || fabs(qd) > RUNAWAY_DPS) {
+        s_yield = true;
+        s_cycle_bad = true;
+    }
+
+    /* Feedforward from the plant model (radians) */
+    tau_ff = J_EST * rdd * DEG2RAD
+           + B_EST * rd * DEG2RAD
+           + K_EST * (r - Q_REST_DEG) * DEG2RAD;
+
+    /* Clamped PD */
+    e  = clampd(e_deg, -ERR_CLAMP_DEG, ERR_CLAMP_DEG) * DEG2RAD;
+    ed = (rd - qd) * DEG2RAD;
+    g  = s_yield ? YIELD_GAIN : 1.0;
+    tau = g * (tau_ff + KP * e + KD * ed);
+
+    /* Saturation + supervision */
+    if (fabs(tau) >= TAU_MAX) {
+        if (++s_sat_ticks >= SAT_TICKS_YIELD) {
+            s_yield = true;
+            s_cycle_bad = true;
+        }
+    } else if (s_sat_ticks > 0) {
+        s_sat_ticks--;
+    }
+    tau = clampd(tau, -TAU_MAX, TAU_MAX);
+
+    /* Slew limit */
+    tau = clampd(tau, s_tau_last - TAU_SLEW, s_tau_last + TAU_SLEW);
+
+    if (!isfinite(tau)) tau = 0.0;
+    s_tau_last = tau;
+    return tau;
+}

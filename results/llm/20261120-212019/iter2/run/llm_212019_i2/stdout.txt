@@ -1,0 +1,4 @@
+GOVERNOR controller=/data/sc/llm_212019_i2 caged=1 uid=1001 period=2000us T=8.0s spasm=0 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 10268697 connected after 0 ticks
+EVENT t=3.124 deadline_miss: no command before tick 1562 (deadline 2000 us)
+SUMMARY {"verdict":"PASSED","reason":"","controller_exit":"finished normally","caged":1,"envelope_held":true,"max_abs_torque_applied":1.702,"angle_range_deg":[20.00,85.00],"max_speed_dps":76.1,"interventions":{"nan":0,"torque":0,"slew":0,"speed":0,"rom":0,"deadline_miss":1,"fallback_ticks":1},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.03,"governor_late_ticks":0,"lateness_us_p99":844.4,"lateness_us_p999":1478.1,"lateness_us_max":1629.6},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}
