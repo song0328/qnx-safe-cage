@@ -5,3 +5,5 @@ __pycache__/
 *.core
 .llmwork/
 !results/llm/
+!results/v1-suite/
+!results/redteam/

@@ -160,7 +160,7 @@ def loop_figure(root, period=1.5, lo=20.0, hi=85.0, title=None):
         b.set_ylim(0, 190); b.set_ylabel("|speed| (deg/s)")
         iv = s["interventions"]
         over = sum(iv.get(k, 0) for k in ("speed", "torque", "rom", "nan"))
-        clean = s["verdict"] == "PASSED" and over == 0
+        clean = s["verdict"] == "PASSED"
         tag = "clean pass" if clean else (f"{over} safety overrides" if s["verdict"] == "PASSED" else s["verdict"])
         a.set_title(f"{it.name}: {tag}", loc="left", fontsize=10, color=GOOD if clean else CRITICAL)
         b.text(0.99, 0.95, f"peak {s['max_speed_dps']:.0f} deg/s", transform=b.transAxes, ha="right", va="top", fontsize=9, color=INK2)

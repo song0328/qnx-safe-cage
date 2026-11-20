@@ -42,7 +42,10 @@
 #define HARD_MARGIN 5.0     /* deg beyond ROM counted as an envelope breach */
 
 /* ---- revocation policy ---- */
-#define KILL_VIOL_TICKS   200   /* ticks with an envelope intervention (0.4 s at 500 Hz) */
+#define WIN_TICKS         250   /* sliding window for overrides (0.5 s at 500 Hz) */
+#define KILL_WIN_OVR      25    /* overrides inside one window -> revoke */
+#define KILL_TOTAL_OVR    100   /* overrides in the whole session -> revoke */
+#define CLEAN_MAX_OVR     5     /* at most this many and the run still counts as PASSED */
 #define KILL_NAN_TICKS    10
 #define KILL_MISS_STREAK  100   /* consecutive controller deadline misses (0.2 s at 500 Hz) */
 
@@ -200,7 +203,8 @@ int main(int argc, char **argv) {
     int have_cmd = 0; double cmd_tau = 0.0; uint32_t cmd_seq = 0;
     long k = 0, wait_ticks = 0;
     long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0;
-    long viol_ticks = 0, miss_streak = 0, first_seen = 0;
+    long n_ovr = 0, miss_streak = 0, first_seen = 0, prev_fallback = 1;
+    static unsigned char ovr_ring[WIN_TICKS]; long ovr_win = 0;
     char verdict_reason[256] = "";
     char ctrl_exit[160] = "still running at end of session";
     long long t_start = 0, prev_tick_ns = 0;
@@ -320,7 +324,13 @@ int main(int argc, char **argv) {
         }
         if (fabs(tau) > TMAX) tau = copysign(TMAX, tau);  /* governor's own output obeys the limit too */
 
-        if (flags & (F_NAN | F_TORQUE | F_SPEED | F_ROM)) viol_ticks += using_ctrl;
+        /* an override = the cage had to change the controller's own command this tick.
+           A slew clamp right after a fallback tick is caused by the cage, not the controller. */
+        int ovr = using_ctrl && ((flags & (F_NAN | F_TORQUE | F_SPEED | F_ROM)) || ((flags & F_SLEW) && !prev_fallback));
+        prev_fallback = !using_ctrl;
+        ovr_win += ovr - ovr_ring[k % WIN_TICKS];
+        ovr_ring[k % WIN_TICKS] = (unsigned char)ovr;
+        n_ovr += ovr;
 
         /* ---- plant step ---- */
         double d = (spasm && sim_t >= SPASM_T0 && sim_t < SPASM_T1) ? SPASM_TAU : 0.0;
@@ -337,7 +347,8 @@ int main(int argc, char **argv) {
         if (alive && !revoked) {
             const char *why = NULL;
             if (n_nan > KILL_NAN_TICKS) why = "repeated non-finite torque commands";
-            else if (viol_ticks > KILL_VIOL_TICKS) why = "repeatedly pushed outside the safety envelope";
+            else if (ovr_win > KILL_WIN_OVR) why = "kept pushing against the safety envelope (too many overrides within 0.5 s)";
+            else if (n_ovr > KILL_TOTAL_OVR) why = "accumulated too many safety overrides over the session";
             else if (miss_streak > KILL_MISS_STREAK) why = "stopped answering within the control deadline";
             else if (caged && k % 10 == 0) {               /* did it try to climb out of its priority? */
                 struct sched_param cp;
@@ -399,17 +410,17 @@ int main(int argc, char **argv) {
     qsort(lates, (size_t)k, sizeof *lates, cmp_f);
     double p99 = k ? lates[(long)(k * 0.99)] : 0, p999 = k ? lates[(long)(k * 0.999)] : 0, lmax = k ? lates[k - 1] : 0;
     int held = max_tau <= TMAX + 1e-6 && min_ang >= ROM_MIN - HARD_MARGIN && max_ang <= ROM_MAX + HARD_MARGIN;
-    const char *verdict = verdict_reason[0] ? "REJECTED" : "PASSED";
+    const char *verdict = verdict_reason[0] ? "REJECTED" : (n_ovr > CLEAN_MAX_OVR ? "CORRECTED" : "PASSED");
 
     char summary[2048];
     snprintf(summary, sizeof summary,
         "{\"verdict\":\"%s\",\"reason\":\"%s\",\"controller_exit\":\"%s\",\"caged\":%d,"
         "\"envelope_held\":%s,\"max_abs_torque_applied\":%.3f,\"angle_range_deg\":[%.2f,%.2f],\"max_speed_dps\":%.1f,"
-        "\"interventions\":{\"nan\":%ld,\"torque\":%ld,\"slew\":%ld,\"speed\":%ld,\"rom\":%ld,\"deadline_miss\":%ld,\"fallback_ticks\":%ld},"
+        "\"overrides\":%ld,\"interventions\":{\"nan\":%ld,\"torque\":%ld,\"slew\":%ld,\"speed\":%ld,\"rom\":%ld,\"deadline_miss\":%ld,\"fallback_ticks\":%ld},"
         "\"timing\":{\"ticks\":%ld,\"period_us\":%ld,\"wall_s\":%.2f,\"governor_late_ticks\":%ld,\"lateness_us_p99\":%.1f,\"lateness_us_p999\":%.1f,\"lateness_us_max\":%.1f},"
         "\"envelope\":{\"tmax\":%.1f,\"slew\":%.0f,\"vmax\":%.0f,\"rom\":[%.0f,%.0f]}}",
         verdict, verdict_reason, ctrl_exit, caged, held ? "true" : "false", max_tau, min_ang, max_ang, max_vel,
-        n_nan, n_torque, n_slew, n_speed, n_rom, n_miss, n_fallback,
+        n_ovr, n_nan, n_torque, n_slew, n_speed, n_rom, n_miss, n_fallback,
         k, period_us, (now_ns() - t_start) / 1e9, n_govlate, p99, p999, lmax, TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX);
     printf("SUMMARY %s\n", summary);
     snprintf(path, sizeof path, "%s/summary.json", outdir);

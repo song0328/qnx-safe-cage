@@ -1,0 +1,506 @@
+[
+ {
+  "controller": "good_rom",
+  "verdict": "PASSED",
+  "reason": "",
+  "controller_exit": "finished normally",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 1.019,
+  "angle_range_deg": [
+   19.51,
+   60.5
+  ],
+  "max_speed_dps": 32.4,
+  "overrides": 0,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 7,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 6,
+   "fallback_ticks": 6
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.24,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1676.7,
+   "lateness_us_p999": 4077.8,
+   "lateness_us_max": 5350.8
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_torque",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.12,
+  "angle_range_deg": [
+   20.0,
+   26.52
+  ],
+  "max_speed_dps": 92.7,
+  "overrides": 26,
+  "interventions": {
+   "nan": 0,
+   "torque": 26,
+   "slew": 27,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 0,
+   "fallback_ticks": 3974
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.18,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1550.7,
+   "lateness_us_p999": 3492.5,
+   "lateness_us_max": 40727.5
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_nan",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: repeated non-finite torque commands",
+  "controller_exit": "killed by governor (repeated non-finite torque commands)",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   40.58
+  ],
+  "max_speed_dps": 90.8,
+  "overrides": 32,
+  "interventions": {
+   "nan": 11,
+   "torque": 0,
+   "slew": 25,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 3,
+   "fallback_ticks": 2992
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.3,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1617.0,
+   "lateness_us_p999": 11124.0,
+   "lateness_us_max": 41177.1
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_loop",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: stopped answering within the control deadline",
+  "controller_exit": "killed by governor (stopped answering within the control deadline)",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   40.58
+  ],
+  "max_speed_dps": 90.8,
+  "overrides": 21,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 23,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 101,
+   "fallback_ticks": 2499
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 10.12,
+   "governor_late_ticks": 230,
+   "lateness_us_p99": 10774.6,
+   "lateness_us_p999": 24478.7,
+   "lateness_us_max": 44988.5
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_crash",
+  "verdict": "REJECTED",
+  "reason": "controller died: memory protection fault (touched memory it does not own) [signal 11]",
+  "controller_exit": "memory protection fault (touched memory it does not own) [signal 11]",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   40.58
+  ],
+  "max_speed_dps": 90.8,
+  "overrides": 21,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 23,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 0,
+   "fallback_ticks": 2499
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.28,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1696.8,
+   "lateness_us_p999": 8088.4,
+   "lateness_us_max": 39161.3
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_mem",
+  "verdict": "REJECTED",
+  "reason": "controller died: memory protection fault (touched memory it does not own) [signal 11]",
+  "controller_exit": "memory protection fault (touched memory it does not own) [signal 11]",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   27.52
+  ],
+  "max_speed_dps": 67.4,
+  "overrides": 14,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 49,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 12,
+   "fallback_ticks": 3961
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.8,
+   "governor_late_ticks": 15,
+   "lateness_us_p99": 5992.3,
+   "lateness_us_p999": 22560.5,
+   "lateness_us_max": 56598.6
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_escape",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: raised its own priority from 9 to 60",
+  "controller_exit": "killed by governor (raised its own priority from 9 to 60)",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   40.58
+  ],
+  "max_speed_dps": 90.8,
+  "overrides": 21,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 22,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 0,
+   "fallback_ticks": 3490
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.38,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1993.5,
+   "lateness_us_p999": 17431.6,
+   "lateness_us_max": 33751.2
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_slow",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.84,
+  "angle_range_deg": [
+   20.0,
+   39.02
+  ],
+  "max_speed_dps": 86.1,
+  "overrides": 66,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 530,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 271,
+   "fallback_ticks": 3531
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 9.42,
+   "governor_late_ticks": 77,
+   "lateness_us_p99": 4926.7,
+   "lateness_us_p999": 7062.8,
+   "lateness_us_max": 28596.8
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "bad_hog",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: raised its own priority from 9 to 63",
+  "controller_exit": "killed by governor (raised its own priority from 9 to 63)",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.997,
+  "angle_range_deg": [
+   20.0,
+   40.58
+  ],
+  "max_speed_dps": 90.8,
+  "overrides": 21,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 32,
+   "speed": 1,
+   "rom": 0,
+   "deadline_miss": 6,
+   "fallback_ticks": 3004
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.52,
+   "governor_late_ticks": 8,
+   "lateness_us_p99": 3279.9,
+   "lateness_us_p999": 11349.0,
+   "lateness_us_max": 14366.6
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "rt_213448_a2",
+  "verdict": "CORRECTED",
+  "reason": "",
+  "controller_exit": "finished normally",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.12,
+  "angle_range_deg": [
+   19.98,
+   20.02
+  ],
+  "max_speed_dps": 0.3,
+  "overrides": 79,
+  "interventions": {
+   "nan": 0,
+   "torque": 79,
+   "slew": 79,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 7,
+   "fallback_ticks": 7
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.15,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1564.7,
+   "lateness_us_p999": 4436.7,
+   "lateness_us_max": 6583.6
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "rt_213448_a4",
+  "verdict": "CORRECTED",
+  "reason": "",
+  "controller_exit": "finished normally",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.12,
+  "angle_range_deg": [
+   19.97,
+   20.02
+  ],
+  "max_speed_dps": 0.3,
+  "overrides": 49,
+  "interventions": {
+   "nan": 0,
+   "torque": 49,
+   "slew": 49,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 13,
+   "fallback_ticks": 21
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.54,
+   "governor_late_ticks": 8,
+   "lateness_us_p99": 3220.4,
+   "lateness_us_p999": 18389.1,
+   "lateness_us_max": 84546.2
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ },
+ {
+  "controller": "rt_213448_a6",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 0.12,
+  "angle_range_deg": [
+   19.71,
+   20.0
+  ],
+  "max_speed_dps": 3.6,
+  "overrides": 26,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 28,
+   "speed": 0,
+   "rom": 0,
+   "deadline_miss": 0,
+   "fallback_ticks": 3973
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.1,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1292.6,
+   "lateness_us_p999": 2234.4,
+   "lateness_us_max": 3951.4
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  }
+ }
+]

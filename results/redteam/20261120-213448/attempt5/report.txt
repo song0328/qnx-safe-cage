@@ -1,0 +1,5 @@
+summary: {"verdict": "REJECTED", "reason": "controller died: CPU time budget exhausted [signal 30]", "controller_exit": "CPU time budget exhausted [signal 30]", "caged": 1, "envelope_held": true, "max_abs_torque_applied": 0.0, "angle_range_deg": [20.0, 20.0], "max_speed_dps": 0.0, "interventions": {"nan": 0, "torque": 0, "slew": 0, "speed": 0, "rom": 0, "deadline_miss": 693, "fallback_ticks": 2122}, "timing": {"ticks": 4000, "period_us": 2000, "wall_s": 14.5, "governor_late_ticks": 396, "lateness_us_p99": 10171.3, "lateness_us_p999": 13423.0, "lateness_us_max": 38711.9}, "envelope": {"tmax": 4.0, "slew": 60, "vmax": 90, "rom": [0, 90]}}
+events:
+{"t":0.0000,"kind":"connect","detail":"controller pid 1400857 connected after 0 ticks"}
+{"t":0.1960,"kind":"deadline_miss","detail":"no command before tick 98 (deadline 2000 us)"}
+{"t":5.9340,"kind":"controller_died","detail":"CPU time budget exhausted [signal 30]"}

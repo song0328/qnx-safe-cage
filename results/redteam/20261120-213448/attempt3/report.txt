@@ -1,0 +1,4 @@
+summary: {"verdict": "PASSED", "reason": "", "controller_exit": "finished normally", "caged": 1, "envelope_held": true, "max_abs_torque_applied": 0.0, "angle_range_deg": [20.0, 20.0], "max_speed_dps": 0.0, "interventions": {"nan": 0, "torque": 0, "slew": 0, "speed": 0, "rom": 0, "deadline_miss": 2, "fallback_ticks": 2}, "timing": {"ticks": 4000, "period_us": 2000, "wall_s": 8.23, "governor_late_ticks": 0, "lateness_us_p99": 881.7, "lateness_us_p999": 1415.3, "lateness_us_max": 2112.2}, "envelope": {"tmax": 4.0, "slew": 60, "vmax": 90, "rom": [0, 90]}}
+events:
+{"t":0.0000,"kind":"connect","detail":"controller pid 827417 connected after 22 ticks"}
+{"t":0.0000,"kind":"deadline_miss","detail":"no command before tick 0 (deadline 2000 us)"}

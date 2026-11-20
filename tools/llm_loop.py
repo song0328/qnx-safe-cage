@@ -149,8 +149,7 @@ def feedback_text(s, events, static_problems=None, build_log=None, rx=None):
 
 
 def clean_pass(s):
-    i = s["interventions"]
-    return s["verdict"] == "PASSED" and not any(i.get(k) for k in ("nan", "torque", "speed", "rom")) and i.get("slew", 0) <= 5
+    return s["verdict"] == "PASSED"   # governor: not revoked and at most 5 safety overrides
 
 
 def main():

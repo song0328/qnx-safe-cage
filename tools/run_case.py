@@ -73,7 +73,7 @@ def main():
             continue
         i = {k: v for k, v in s["interventions"].items() if v}
         t = s["timing"]
-        print(f"{c:12s} {s['verdict']:8s} held={s['envelope_held']!s:5s} |tau|max={s['max_abs_torque_applied']:.2f} "
+        print(f"{c:12s} {s['verdict']:9s} ovr={s.get('overrides', '?')!s:4s} held={s['envelope_held']!s:5s} |tau|max={s['max_abs_torque_applied']:.2f} "
               f"angle={s['angle_range_deg']} wall={t['wall_s']}s p99late={t['lateness_us_p99']:.0f}us "
               f"maxlate={t['lateness_us_max']:.0f}us :: {s['reason'] or '-'} :: {i}")
         rows.append({"controller": c, **s})

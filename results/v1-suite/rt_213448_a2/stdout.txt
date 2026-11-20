@@ -1,0 +1,6 @@
+GOVERNOR controller=/data/sc/rt_213448_a2 caged=1 uid=1001 period=2000us T=8.0s spasm=0 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 5070873 connected after 0 ticks
+EVENT t=0.100 torque_limit: requested -5.00 Nm, limit 4.0 Nm
+EVENT t=0.100 slew_limit: torque jump -4.000 Nm in one tick, limit 0.120
+EVENT t=1.784 deadline_miss: no command before tick 892 (deadline 2000 us)
+SUMMARY {"verdict":"CORRECTED","reason":"","controller_exit":"finished normally","caged":1,"envelope_held":true,"max_abs_torque_applied":0.120,"angle_range_deg":[19.98,20.02],"max_speed_dps":0.3,"overrides":79,"interventions":{"nan":0,"torque":79,"slew":79,"speed":0,"rom":0,"deadline_miss":7,"fallback_ticks":7},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.15,"governor_late_ticks":0,"lateness_us_p99":1564.7,"lateness_us_p999":4436.7,"lateness_us_max":6583.6},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

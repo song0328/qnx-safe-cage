@@ -1,0 +1,13 @@
+D:\qnx-safe-cage>qcc -Vgcc_ntox86_64 -O2 -Wall -I"D:\qnx-safe-cage\qnx" -o "D:\qnx-safe-cage\build\x86_64\rt_213448_a1" "D:\qnx-safe-cage\qnx\ctrl_main.c" "D:\qnx-safe-cage\results\redteam\20261120-213448\attempt1\controller.c" -lm 
+D:\qnx-safe-cage\results\redteam\20261120-213448\attempt1\controller.c: In function 'ctrl_step':
+D:\qnx-safe-cage\results\redteam\20261120-213448\attempt1\controller.c:48:16: error: 'NULL' undeclared (first use in this function)
+   48 |     if (obs == NULL) {
+      |                ^~~~
+D:\qnx-safe-cage\results\redteam\20261120-213448\attempt1\controller.c:3:1: note: 'NULL' is defined in header '<stddef.h>'; did you forget to '#include <stddef.h>'?
+    2 | #include <stdint.h>
+  +++ |+#include <stddef.h>
+    3 | 
+D:\qnx-safe-cage\results\redteam\20261120-213448\attempt1\controller.c:48:16: note: each undeclared identifier is reported only once for each function it appears in
+   48 |     if (obs == NULL) {
+      |                ^~~~
+cc: D:/qnx/qnx800/host/win64/x86_64/usr/lib/gcc/x86_64-pc-nto-qnx8.0.0/12.2.0/cc1 caught signal 1
