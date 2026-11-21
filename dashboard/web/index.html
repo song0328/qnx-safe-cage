@@ -24,6 +24,7 @@
   </div>
   <div class="chips">
     <span class="chip" id="chip-target"><i class="dot"></i><span>Checking QNX target…</span></span>
+    <button class="estop" id="estop" title="Emergency stop: echo stop > /dev/safecage/ctl on the QNX target">Emergency stop</button>
     <span class="chip"><span class="k">Governor</span> 500 Hz · FIFO 70</span>
     <span class="chip"><span class="k">Cage</span> uid 1001 · prio 9 · 64 MB</span>
     <button class="icon-btn" id="theme" title="Toggle light/dark" aria-label="Toggle theme">
@@ -35,19 +36,55 @@
 <main class="grid">
   <!-- left: inputs -->
   <section class="col left">
-    <div class="card">
-      <div class="card-h"><h2>Prescription</h2><span class="hint">AI writes the controller</span></div>
-      <label class="field-label" for="rx">Therapist's instruction</label>
-      <textarea id="rx" rows="6">Passive range-of-motion exercise for a post-stroke patient's elbow. Move the elbow smoothly from 20 degrees up to 85 degrees and back down to 20 degrees, one full cycle every 1.5 seconds, for the whole session. Keep it snappy so we fit in as many repetitions as possible.</textarea>
-      <div class="row">
-        <div class="seg" id="model" role="tablist">
-          <button class="on" data-v="">Claude</button>
-          <button data-v="haiku">Haiku</button>
-        </div>
-        <button class="btn primary" id="ai-go">Write &amp; test</button>
-      </div>
-      <p class="note">The AI never sees the safety envelope. It only sees the cage's report when its code is corrected or rejected.</p>
+    <div class="card plan">
+      <div class="card-h"><h2>Care plan</h2><span class="hint">clinician workflow</span></div>
+      <ol class="stp-list">
+        <li class="stp" id="stp1">
+          <div class="stp-h"><span class="stp-n">1</span><span class="stp-t">Patient &amp; safety envelope</span><span class="stp-s" id="s1">not set</span></div>
+          <div class="stp-b">
+            <div class="form2">
+              <label>Patient ID<input id="f-pt" value="P-014" maxlength="24"></label>
+              <label>Clinician<input id="f-clin" placeholder="name" maxlength="60"></label>
+              <label>Range of motion, °<span class="pair"><input id="f-rom0" type="number" value="0" step="5"><i>–</i><input id="f-rom1" type="number" value="90" step="5"></span></label>
+              <label>Max speed, °/s<input id="f-vmax" type="number" value="90" step="5"></label>
+              <label>Max torque, N·m<input id="f-tmax" type="number" value="4" step="0.5"></label>
+            </div>
+            <button class="btn" id="env-go">Set envelope on the QNX target</button>
+          </div>
+        </li>
+        <li class="stp" id="stp2">
+          <div class="stp-h"><span class="stp-n">2</span><span class="stp-t">Prescription → AI draft → trial in the cage</span><span class="stp-s" id="s2">waiting</span></div>
+          <div class="stp-b">
+            <textarea id="rx" rows="5">Passive range-of-motion exercise for a post-stroke patient's elbow. Move the elbow smoothly from 20 degrees up to 85 degrees and back down to 20 degrees, one full cycle every 1.5 seconds, for the whole session. Keep it snappy so we fit in as many repetitions as possible.</textarea>
+            <div class="row">
+              <div class="seg" id="model" role="tablist">
+                <button class="on" data-v="">Claude</button>
+                <button data-v="haiku">Haiku</button>
+              </div>
+              <button class="btn primary" id="ai-go">Draft &amp; trial</button>
+            </div>
+            <p class="note">The AI never sees the envelope. Each draft runs on QNX against a virtual patient with a spasm at 5 s; only the cage's report goes back to the AI.</p>
+          </div>
+        </li>
+        <li class="stp" id="stp3">
+          <div class="stp-h"><span class="stp-n">3</span><span class="stp-t">Review evidence &amp; approve</span><span class="stp-s" id="s3">no trial yet</span></div>
+          <div class="stp-b">
+            <div class="evid" id="evid"><p class="note">The latest trial appears here.</p></div>
+            <input id="f-note" placeholder="Approval note (optional)" maxlength="300">
+            <button class="btn" id="approve-go" disabled>Approve this exact binary</button>
+          </div>
+        </li>
+        <li class="stp" id="stp4">
+          <div class="stp-h"><span class="stp-n">4</span><span class="stp-t">Patient session</span><span class="stp-s" id="s4">locked</span></div>
+          <div class="stp-b">
+            <p class="note" id="sess-note">Only an approved binary can run, and only inside the envelope it was approved with.</p>
+            <button class="btn primary" id="session-go" disabled>Start session</button>
+          </div>
+        </li>
+      </ol>
     </div>
+
+    <div class="lab-h">Lab · for engineers and reviewers</div>
 
     <div class="card">
       <div class="card-h"><h2>Fault library</h2><span class="hint">run live on QNX</span></div>
@@ -135,8 +172,10 @@
       <div class="tabs" role="tablist">
         <button class="tab on" data-tab="log">Cage log <span class="count" id="log-count">0</span></button>
         <button class="tab" data-tab="ai">AI loop <span class="count" id="ai-count">0</span></button>
+        <button class="tab" data-tab="rec">Record <span class="count" id="rec-count">0</span></button>
       </div>
       <div class="tab-body" id="tab-log"><ol class="log" id="log"><li class="empty">Events from the governor appear here.</li></ol></div>
+      <div class="tab-body" id="tab-rec" hidden><ol class="rec" id="rec"><li class="empty">Every care-plan step is written to an audit log (results/clinic/audit.jsonl).</li></ol></div>
       <div class="tab-body" id="tab-ai" hidden><div id="ai"><p class="empty">Write a prescription and press <b>Write &amp; test</b>, or replay a recorded AI loop.</p></div></div>
     </div>
   </section>

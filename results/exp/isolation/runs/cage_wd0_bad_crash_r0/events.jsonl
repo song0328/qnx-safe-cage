@@ -1,0 +1,6 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 8831004 connected after 1 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}
+{"t":0.1060,"kind":"speed_limit","detail":"joint at 90.2 deg/s, limit 90"}
+{"t":0.9940,"kind":"deadline_miss","detail":"no command before tick 497 (deadline 2000 us)"}
+{"t":3.0020,"kind":"controller_died","detail":"memory protection fault (touched memory it does not own) [signal 11]"}
+{"t":7.9980,"kind":"joint_finished","detail":"the joint ended the session"}

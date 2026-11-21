@@ -5,7 +5,14 @@
 Live mode runs the governor on the QNX target over SSH with -L and streams its telemetry to the
 browser (Server-Sent Events). The AI mode runs the repair loop step by step. Replay mode streams
 recorded runs from results/ at real speed, so the dashboard also works without a QNX target.
+
+Care plan (the clinical workflow): the clinician sets the patient's envelope (written to the target
+and enforced by the governor and judged by the joint) -> the AI drafts a controller and it is tried in
+the cage against a virtual patient with a spasm -> the clinician approves a PASSED trial (the binary's
+SHA-256 is pinned) -> only that exact binary may run a patient session -> emergency stop through the
+QNX resource manager (/dev/safecage/ctl). Every step is appended to results/clinic/audit.jsonl.
 """
+import hashlib
 import argparse
 import json
 import pathlib
@@ -67,6 +74,39 @@ class Bus:
 
 BUS = Bus()
 
+# ---------------------------------------------------------------- care plan state
+CLINIC_DIR = ROOT / "results" / "clinic"
+CLINIC = {"patient": None, "clinician": None, "envelope": None, "trial": None, "approval": None, "session": None}
+ENV_LIMITS = {"tmax": (0.5, 6.0), "vmax": (10.0, 180.0), "rom_min": (-5.0, 60.0), "rom_max": (30.0, 140.0)}
+
+
+def sha256(path):
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+def audit(kind, **data):
+    CLINIC_DIR.mkdir(parents=True, exist_ok=True)
+    rec = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, **data}
+    with (CLINIC_DIR / "audit.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    BUS.emit("clinic", state=clinic_state())
+    return rec
+
+
+def audit_tail(n=40):
+    p = CLINIC_DIR / "audit.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()][-n:]
+
+
+def clinic_state():
+    return {**CLINIC, "audit": audit_tail()}
+
+
+def env_file():
+    return f"{REMOTE_DIR}/env_{CLINIC['patient']}.txt" if CLINIC["envelope"] else None
+
 
 def parse_line(line, extra=None):
     """Turn one governor stdout line into a bus event."""
@@ -99,16 +139,26 @@ def target_ok():
         return False, str(e)
 
 
-def run_live(ctrl, T=8.0, spasm=False, extra=None):
-    jflags = f"-T {T}" + (" -s" if spasm else "")
-    # the joint process (drive + forearm + patient) starts first; the governor streams telemetry
-    cmd = (f"cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; mkdir -p /dev/shmem/sc_dash; "
-           f"./joint {jflags} -o /dev/shmem/sc_dash > /dev/shmem/sc_dash.joint 2>&1 & "
-           f"./governor -c {REMOTE_DIR}/{ctrl} -T {T} -L -o /dev/shmem/sc_dash 2>&1; wait")
+def run_live(ctrl, T=8.0, spasm=False, extra=None, env=None):
+    e = f" -e {env}" if env else ""
+    jflags = f"-T {T}" + (" -s" if spasm else "") + " -w 20" + e
+    # the joint process (drive + forearm + patient, with a 20 ms drive watchdog) starts first and judges
+    # the run; the governor streams telemetry; the joint's verdict is printed last as a TRUTH line
+    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; mkdir -p /dev/shmem/sc_dash; "
+           f"rm -f /dev/shmem/sc_dash/truth.json; ./joint {jflags} -o /dev/shmem/sc_dash > /dev/shmem/sc_dash.joint 2>&1 & JP=$!; "
+           f"./governor -c {REMOTE_DIR}/{ctrl} -T {T} -L{e} -o /dev/shmem/sc_dash 2>&1; wait $JP; "
+           f"echo TRUTH $(cat /dev/shmem/sc_dash/truth.json)")
     p = subprocess.Popen(ssh_cmd(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     summary = None
     for line in p.stdout:
-        s = parse_line(line.rstrip("\n"), extra)
+        line = line.rstrip("\n")
+        if line.startswith("TRUTH {"):
+            truth = json.loads(line[6:])
+            if summary is not None:
+                summary["truth"] = truth
+            BUS.emit("truth", truth=truth, **(extra or {}))
+            continue
+        s = parse_line(line, extra)
         summary = s or summary
     p.wait()
     return summary
@@ -160,8 +210,24 @@ def job_ai(rx, model, iters):
                     subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(ROOT / "build" / "x86_64" / name),
                                     f"{ARGS.host}:{REMOTE_DIR}/"], timeout=120)
                     BUS.emit("session", mode="ai", controller=name, title=f"AI iteration {n}",
-                             subtitle=rx[:90], T=8.0, iter=n)
-                    s = run_live(name, extra={"iter": n})
+                             subtitle=rx[:90], T=8.0, iter=n, envelope=CLINIC["envelope"])
+                    # the trial runs against a virtual patient with a spasm at 5 s, inside the patient's envelope
+                    s = run_live(name, extra={"iter": n}, env=env_file(), spasm=True)
+                    if s:
+                        CLINIC["trial"] = {"controller": name, "iteration": n, "prescription": rx,
+                                           "verdict": s["verdict"], "reason": s.get("reason"),
+                                           "overrides": s.get("overrides"),
+                                           "envelope_held": (s.get("truth") or {}).get("envelope_held"),
+                                           "max_speed_dps": (s.get("truth") or {}).get("max_speed_dps"),
+                                           "angle_range_deg": (s.get("truth") or {}).get("angle_range_deg"),
+                                           "binary_sha256": sha256(ROOT / "build" / "x86_64" / name),
+                                           "source_sha256": sha256(d / "controller.c"),
+                                           "source": str((d / "controller.c").relative_to(ROOT)),
+                                           "envelope": CLINIC["envelope"], "patient": CLINIC["patient"]}
+                        CLINIC["approval"] = None
+                        audit("trial", patient=CLINIC["patient"], controller=name, iteration=n, verdict=s["verdict"],
+                              reason=s.get("reason") or "", envelope_held=CLINIC["trial"]["envelope_held"],
+                              binary_sha256=CLINIC["trial"]["binary_sha256"][:16])
                     if not s:
                         fb = "The run produced no result."
                     else:
@@ -179,6 +245,38 @@ def job_ai(rx, model, iters):
     finally:
         BUS.emit("idle")
         BUS.busy = False
+
+
+def job_session():
+    """A patient session with the approved controller only."""
+    try:
+        a = CLINIC["approval"]
+        BUS.emit("session", mode="patient", controller=a["controller"], title=f"Patient session · {CLINIC['patient']}",
+                 subtitle=f"Approved by {a['clinician']} · binary {a['binary_sha256'][:12]}", T=8.0,
+                 envelope=CLINIC["envelope"])
+        audit("session_start", patient=CLINIC["patient"], controller=a["controller"], clinician=a["clinician"],
+              binary_sha256=a["binary_sha256"][:16])
+        s = run_live(a["controller"], env=env_file())
+        if not s:
+            BUS.emit("error", text="The session did not produce a summary. Is the QNX target reachable?")
+            audit("session_end", patient=CLINIC["patient"], result="no result")
+            return
+        tr = s.get("truth") or {}
+        CLINIC["session"] = {"verdict": s["verdict"], "reason": s.get("reason"), "overrides": s.get("overrides"),
+                             "envelope_held": tr.get("envelope_held"), "angle_range_deg": tr.get("angle_range_deg"),
+                             "max_speed_dps": tr.get("max_speed_dps"), "estop": "emergency stop" in (s.get("reason") or "")}
+        audit("session_end", patient=CLINIC["patient"], verdict=s["verdict"], reason=s.get("reason") or "",
+              envelope_held=tr.get("envelope_held"), overrides=s.get("overrides"))
+    finally:
+        BUS.emit("idle")
+        BUS.busy = False
+
+
+def estop(who):
+    r = subprocess.run(ssh_cmd("echo stop > /dev/safecage/ctl"), capture_output=True, text=True, timeout=10)
+    ok = r.returncode == 0
+    audit("emergency_stop", by=who or "operator", ok=ok, detail=(r.stderr or "").strip()[:200])
+    return ok
 
 
 # ---------------------------------------------------------------- replay of recorded runs
@@ -321,6 +419,8 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 BUS.unsubscribe(q)
             return
+        if self.path == "/api/clinic":
+            return self._json(clinic_state())
         if self.path == "/api/status":
             ok, uname = target_ok()
             return self._json({"target": ok, "uname": uname, "busy": BUS.busy,
@@ -343,6 +443,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(n) or b"{}")
+        if self.path == "/api/estop":                       # always allowed, even (especially) while busy
+            return self._json({"ok": estop(req.get("by"))})
+        if self.path == "/api/clinic/envelope":
+            return self.set_envelope(req)
+        if self.path == "/api/clinic/approve":
+            return self.approve(req)
         if BUS.busy:
             return self._json({"error": "busy"}, 409)
         if self.path == "/api/run":
@@ -358,6 +464,18 @@ class Handler(BaseHTTPRequestHandler):
             BUS.busy = True
             threading.Thread(target=job_ai, args=(rx, req.get("model") or None, int(req.get("iters", 4))),
                              daemon=True).start()
+        elif self.path == "/api/clinic/session":
+            a = CLINIC["approval"]
+            if not a:
+                return self._json({"error": "No approved controller. Approve a PASSED trial first."}, 400)
+            binp = ROOT / "build" / "x86_64" / a["controller"]
+            if not binp.exists() or sha256(binp) != a["binary_sha256"]:
+                audit("session_refused", reason="binary does not match the approved SHA-256")
+                return self._json({"error": "The controller binary changed after approval. Refused."}, 409)
+            if a["envelope"] != CLINIC["envelope"]:
+                return self._json({"error": "The envelope changed after approval. Re-run the trial."}, 409)
+            BUS.busy = True
+            threading.Thread(target=job_session, daemon=True).start()
         elif self.path == "/api/replay":
             BUS.busy = True
             threading.Thread(target=job_replay, args=(req.get("id", ""), float(req.get("speed", 1.0))),
@@ -365,6 +483,57 @@ class Handler(BaseHTTPRequestHandler):
         else:
             return self._json({"error": "not found"}, 404)
         return self._json({"ok": True})
+
+
+def _set_envelope(self, req):
+    try:
+        patient = re.sub(r"[^A-Za-z0-9_-]", "", str(req.get("patient", "")))[:24]
+        clinician = str(req.get("clinician", "")).strip()[:60]
+        e = {"tmax": float(req["tmax"]), "slew": 60.0, "vmax": float(req["vmax"]),
+             "rom_min": float(req["rom_min"]), "rom_max": float(req["rom_max"])}
+    except (KeyError, TypeError, ValueError):
+        return self._json({"error": "Envelope values must be numbers."}, 400)
+    if not patient or not clinician:
+        return self._json({"error": "Patient ID and clinician name are required."}, 400)
+    for k, (lo, hi) in ENV_LIMITS.items():
+        if not lo <= e[k] <= hi:
+            return self._json({"error": f"{k} must be between {lo} and {hi}."}, 400)
+    if e["rom_max"] - e["rom_min"] < 20:
+        return self._json({"error": "Range of motion must span at least 20 degrees."}, 400)
+    if BUS.busy:
+        return self._json({"error": "busy"}, 409)
+    line = f"{e['tmax']} {e['slew']} {e['vmax']} {e['rom_min']} {e['rom_max']}"
+    r = subprocess.run(ssh_cmd(f"echo '{line}' > {REMOTE_DIR}/env_{patient}.txt && cat {REMOTE_DIR}/env_{patient}.txt"),
+                       capture_output=True, text=True, timeout=15)
+    if r.returncode != 0 or line not in r.stdout:
+        return self._json({"error": "Could not write the envelope to the QNX target."}, 502)
+    CLINIC.update(patient=patient, clinician=clinician, envelope=e, trial=None, approval=None, session=None)
+    audit("envelope_set", patient=patient, clinician=clinician, envelope=e)
+    return self._json({"ok": True})
+
+
+def _approve(self, req):
+    t = CLINIC["trial"]
+    who = str(req.get("clinician", "")).strip()[:60]
+    if not who:
+        return self._json({"error": "Clinician name is required to approve."}, 400)
+    if not CLINIC["envelope"]:
+        return self._json({"error": "Set the patient's envelope first (step 1)."}, 400)
+    if not t:
+        return self._json({"error": "No trial to approve."}, 400)
+    if t["verdict"] != "PASSED" or not t.get("envelope_held"):
+        return self._json({"error": f"Only a PASSED trial with the envelope held can be approved (this one: {t['verdict']})."}, 400)
+    if t["envelope"] != CLINIC["envelope"]:
+        return self._json({"error": "The envelope changed after this trial. Re-run the trial."}, 409)
+    CLINIC["approval"] = {**t, "clinician": who, "note": str(req.get("note", ""))[:300],
+                          "approved_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    audit("approved", patient=CLINIC["patient"], clinician=who, controller=t["controller"],
+          binary_sha256=t["binary_sha256"][:16], note=CLINIC["approval"]["note"])
+    return self._json({"ok": True})
+
+
+Handler.set_envelope = _set_envelope
+Handler.approve = _approve
 
 
 def main():

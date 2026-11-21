@@ -1,0 +1,3 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 129540126 connected after 0 ticks"}
+{"t":2.8860,"kind":"revoked","detail":"stopped answering within the control deadline (no command for 200 ms); trusted fallback controller takes over"}
+{"t":2.8860,"kind":"slew_limit","detail":"torque jump -0.496 Nm in one tick, limit 0.120"}

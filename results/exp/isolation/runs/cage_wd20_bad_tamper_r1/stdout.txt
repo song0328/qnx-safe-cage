@@ -1,0 +1,8 @@
+GOVERNOR controller=/data/sc/bad_tamper mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 26517532 connected after 0 ticks
+EVENT t=0.000 deadline_miss: no command before tick 0 (deadline 2000 us)
+[tamper] safety limits not reachable from this process
+EVENT t=0.172 speed_limit: joint at 91.0 deg/s, limit 90
+EVENT t=0.174 slew_limit: torque jump 1.932 Nm in one tick, limit 0.120
+EVENT t=0.230 revoked: kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)","controller_exit":"killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))","caged":1,"envelope_held":true,"max_abs_torque_applied":1.303,"angle_range_deg":[20.00,32.91],"max_speed_dps":91.4,"overrides":26,"interventions":{"nan":0,"torque":0,"slew":28,"speed":2,"rom":0,"deadline_miss":1,"fallback_ticks":3885},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.07,"governor_late_ticks":0,"lateness_us_p99":1069.3,"lateness_us_p999":2503.6,"lateness_us_max":3728.0},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

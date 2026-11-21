@@ -9,7 +9,7 @@
  *   -w 0    hold the last command (many simple drives / a latched PWM register)
  *   -w MS   drive watchdog: no new command for MS milliseconds -> safe torque off (latched)
  *
- * Usage: joint [-T seconds] [-p period_us] [-s] [-w ms] [-o outdir]
+ * Usage: joint [-T seconds] [-p period_us] [-s] [-w ms] [-o outdir] [-e envelope_file]
  * Start it first; it waits (up to 10 s) for the governor to set start=1.
  */
 #include <stdio.h>
@@ -37,11 +37,8 @@
 #define MOTOR_MAX   12.0    /* N*m, what the motor can physically produce (above the clinical 4 N*m) */
 #define STOP_MIN   -10.0    /* deg, anatomical end stops: hitting one is an injury proxy */
 #define STOP_MAX   150.0
-/* the clinical envelope, used here only to JUDGE the run */
-#define ENV_TMAX    4.0
-#define ENV_VMAX    90.0
-#define ENV_ROM_MIN 0.0
-#define ENV_ROM_MAX 90.0
+/* the clinical envelope, used here only to JUDGE the run (same file as the governor's -e) */
+static double ENV_TMAX = 4.0, ENV_VMAX = 90.0, ENV_ROM_MIN = 0.0, ENV_ROM_MAX = 90.0;
 #define HARD_MARGIN 5.0
 #define JOINT_PRIO  72
 #define PULSE_TICK  (_PULSE_CODE_MINAVAIL + 2)
@@ -52,13 +49,17 @@ int main(int argc, char **argv) {
     double T = 8.0; long period_us = 2000; int spasm = 0; long wd_ms = 0;
     const char *outdir = "/dev/shmem/sc_out";
     int opt;
-    while ((opt = getopt(argc, argv, "T:p:sw:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "T:p:sw:o:e:")) != -1) {
         switch (opt) {
         case 'T': T = atof(optarg); break;
         case 'p': period_us = atol(optarg); break;
         case 's': spasm = 1; break;
         case 'w': wd_ms = atol(optarg); break;
         case 'o': outdir = optarg; break;
+        case 'e': {
+            FILE *ef = fopen(optarg, "r"); double tm, sl, vm, r0, r1;
+            if (!ef || fscanf(ef, "%lf %lf %lf %lf %lf", &tm, &sl, &vm, &r0, &r1) != 5) { fprintf(stderr, "joint: bad envelope file\n"); return 2; }
+            fclose(ef); ENV_TMAX = tm; ENV_VMAX = vm; ENV_ROM_MIN = r0; ENV_ROM_MAX = r1; (void)sl; break; }
         default: fprintf(stderr, "usage: %s [-T s] [-p us] [-s] [-w ms] [-o dir]\n", argv[0]); return 2;
         }
     }

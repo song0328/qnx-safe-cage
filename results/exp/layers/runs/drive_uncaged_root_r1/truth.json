@@ -1,0 +1,1 @@
+{"envelope_held":false,"breach_ticks":345,"first_breach_s":1.0040,"hit_anatomical_stop":false,"first_stop_s":-1.0000,"max_abs_torque":10.000,"angle_range_deg":[20.00,131.53],"max_speed_dps":908.3,"ticks_over_99dps":329,"stale_command_ticks":10,"drive_sto":false,"sto_s":-1.0000,"watchdog_ms":0,"ticks":4000}

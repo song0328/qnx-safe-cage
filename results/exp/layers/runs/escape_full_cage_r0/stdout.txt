@@ -1,0 +1,10 @@
+GOVERNOR controller=/data/sc/bad_escape mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 56086556 connected after 1 ticks
+EVENT t=0.000 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120
+EVENT t=0.106 speed_limit: joint at 90.2 deg/s, limit 90
+[escape] kill(governor): Operation not permitted
+[escape] fork(): Operation not permitted
+[escape] raise priority to 60: SUCCEEDED
+EVENT t=1.022 revoked: raised its own priority from 9 to 60; trusted fallback controller takes over
+EVENT t=7.998 joint_finished: the joint ended the session
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: raised its own priority from 9 to 60","controller_exit":"killed by governor (raised its own priority from 9 to 60)","caged":1,"envelope_held":true,"max_abs_torque_applied":0.998,"angle_range_deg":[20.00,40.76],"max_speed_dps":90.2,"overrides":21,"interventions":{"nan":0,"torque":0,"slew":22,"speed":1,"rom":0,"deadline_miss":0,"fallback_ticks":3487},"timing":{"ticks":3997,"period_us":2000,"wall_s":8.07,"governor_late_ticks":0,"lateness_us_p99":990.7,"lateness_us_p999":2282.9,"lateness_us_max":3507.8},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

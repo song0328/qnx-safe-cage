@@ -16,7 +16,10 @@ def load(name):
     p = EXP / name / "runs.jsonl"
     if not p.exists():
         return []
-    return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+    rows = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+    for r in rows:
+        r["_exp"] = name
+    return rows
 
 
 def by_cond(rows):
@@ -118,7 +121,7 @@ def timing_rows(rows):
 def timing_table(rows, title, intro):
     if not rows:
         return ""
-    out = [f"## {title}\n", intro + "\n",
+    out = [f"## {title}\n", intro + "\n", load_check(rows),
            "| Condition | n | Envelope held | Governor tick lateness p99 (median) | Worst tick lateness (median / max) | Governor late ticks (median) | Controller deadline misses (median) | Drive on stale command (median) | Verdicts |",
            "|---|---|---|---|---|---|---|---|---|"]
     for t in timing_rows(rows):
@@ -148,6 +151,27 @@ def layers_section(rows):
     return "\n".join(out) + "\n"
 
 
+CAGE, MONO = "#2a78d6", "#eb6834"          # categorical slots 1-2 (validated: CVD dE 24.7, normal 33.6)
+INK, INK2, INK3, LINE, SURF, BAD = "#0b0b0b", "#52514e", "#8a8984", "#e4e3df", "#fcfcfb", "#d03b3b"
+
+
+def _style(plt):
+    plt.rcParams.update({"font.size": 9, "axes.edgecolor": LINE, "axes.labelcolor": INK2, "xtick.color": INK3,
+                         "ytick.color": INK3, "axes.spines.top": False, "axes.spines.right": False,
+                         "figure.facecolor": SURF, "axes.facecolor": SURF, "savefig.facecolor": SURF,
+                         "axes.titlesize": 10, "axes.titleweight": "bold", "axes.titlecolor": INK,
+                         "axes.titlelocation": "left", "legend.frameon": False})
+
+
+def _read_truth_csv(path):
+    t, v = [], []
+    for line in path.read_text().splitlines():
+        f = line.split(",")
+        if len(f) >= 3:
+            t.append(float(f[0])); v.append(abs(float(f[2])))
+    return t, v
+
+
 def figures():
     try:
         import matplotlib
@@ -155,7 +179,73 @@ def figures():
         import matplotlib.pyplot as plt
     except ImportError:
         return []
+    _style(plt)
     made = []
+
+    # ---- E1: what each failure costs, cage vs single process (drive holds the last command)
+    iso = by_cond(load("isolation"))
+    ctrls = [c for c in ["bad_crash", "bad_loop", "bad_mem", "bad_hog", "bad_slow", "bad_tamper", "bad_torque", "bad_nan", "bad_drive", "good_rom"]
+             if f"cage_wd0_{c}" in iso]
+    if ctrls:
+        fig, (a1, a2) = plt.subplots(1, 2, figsize=(9, 3.9), sharey=True)
+        y = list(range(len(ctrls)))
+        h = 0.36
+        for ax, metric, title, xl in ((a1, "unsup", "Time with no working safety layer", "seconds without a fresh safe command (median of 3)"),
+                                      (a2, "vmax", "Peak joint speed (independent judge)", "deg/s (max of 3); limit 90, breach above 99")):
+            for k, (mode, col, lab) in enumerate((("cage", CAGE, "cage: controller in its own process"),
+                                                  ("mono", MONO, "single process: controller linked into the governor"))):
+                vals = []
+                for c in ctrls:
+                    rs = iso.get(f"{mode}_wd0_{c}", [])
+                    if metric == "unsup":
+                        vals.append(med([unsupervised_s(r) for r in rs]) or 0)
+                    else:
+                        vals.append(max((truth(r, "max_speed_dps") or 0) for r in rs) if rs else 0)
+                ax.barh([i + (k - 0.5) * (h + 0.04) for i in y], vals, h, color=col, label=lab)
+            ax.set_title(title)
+            ax.set_xlabel(xl)
+            ax.grid(axis="x", color=LINE, linewidth=0.6)
+            ax.set_axisbelow(True)
+        a2.axvline(90, color=INK3, linewidth=1, linestyle=(0, (3, 3)))
+        a2.axvline(99, color=BAD, linewidth=1, linestyle=(0, (3, 3)))
+        a2.text(101, len(ctrls) - 0.6, "breach", color=BAD, fontsize=8)
+        a1.set_yticks(y)
+        a1.set_yticklabels(ctrls, color=INK2)
+        a1.invert_yaxis()
+        h_, l_ = a1.get_legend_handles_labels()
+        fig.legend(h_, l_, loc="lower center", ncol=2, fontsize=8.5, bbox_to_anchor=(0.5, -0.01))
+        fig.suptitle("Same controllers, same VM, same joint: only the process boundary changes", x=0.01, ha="left",
+                     fontsize=11, fontweight="bold", color=INK)
+        fig.tight_layout(rect=(0, 0.07, 1, 0.97))
+        p = EXP / "isolation.png"
+        fig.savefig(p, dpi=160)
+        plt.close(fig)
+        made.append(p)
+
+    # ---- tamper: true joint speed over time
+    cdir, mdir = EXP / "isolation" / "runs" / "cage_wd0_bad_tamper_r0", EXP / "isolation" / "runs" / "mono_wd0_bad_tamper_r0"
+    if (cdir / "truth.csv").exists() and (mdir / "truth.csv").exists():
+        fig, ax = plt.subplots(figsize=(9, 3.2))
+        for d, col, lab in ((mdir, MONO, "single process: limits found in memory and raised; governor verdict PASSED"),
+                            (cdir, CAGE, "cage: limits not reachable from the controller's process; revoked")):
+            t, v = _read_truth_csv(d / "truth.csv")
+            ax.plot(t, v, color=col, linewidth=1.6, label=lab)
+        ax.axhline(90, color=INK3, linewidth=1, linestyle=(0, (3, 3)))
+        ax.text(0.05, 92, "speed limit 90 deg/s", color=INK2, fontsize=8)
+        ax.set_xlabel("session time (s)")
+        ax.set_ylabel("|joint speed|, deg/s")
+        ax.set_title("AI code that 'fixes' the prescription by raising the safety limits (bad_tamper)")
+        ax.grid(axis="y", color=LINE, linewidth=0.6)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=8, loc="upper right")
+        ax.set_ylim(0, 160)
+        fig.tight_layout()
+        p = EXP / "tamper.png"
+        fig.savefig(p, dpi=160)
+        plt.close(fig)
+        made.append(p)
+
+    # ---- E3: governor priority under load
     pr = load("priority")
     if pr:
         g = by_cond(pr)
@@ -164,28 +254,59 @@ def figures():
             l = cid.split("_", 1)[1]
             if l not in loads:
                 loads.append(l)
-        fig, ax = plt.subplots(figsize=(8, 3.6))
-        w = 0.38
-        for i, gp in enumerate(("gov70", "gov10")):
+        fig, ax = plt.subplots(figsize=(9, 3.4))
+        w = 0.36
+        for i, (gp, col, lab) in enumerate((("gov70", CAGE, "governor at 70 (above anything a non-root process can reach)"),
+                                            ("gov10", MONO, "governor at 10 (an ordinary application priority)"))):
             vals = []
             for l in loads:
                 rs = g.get(f"{gp}_{l}", [])
-                vals.append(max([(r.get("timing") or {}).get("lateness_us_max") or 0 for r in rs] or [0]) / 1000)
-            ax.bar([x + (i - 0.5) * w for x in range(len(loads))], vals, w,
-                   label="governor at 70 (above any non-root app)" if gp == "gov70" else "governor at 10 (like a normal app)",
-                   color="#2a6f97" if gp == "gov70" else "#c8553d")
+                vals.append(max([((r.get("timing") or {}).get("lateness_us_max") or 0) for r in rs] or [0]) / 1000 or 0.1)
+            ax.bar([x + (i - 0.5) * (w + 0.04) for x in range(len(loads))], vals, w, color=col, label=lab)
         ax.set_xticks(range(len(loads)))
-        ax.set_xticklabels(loads)
+        ax.set_xticklabels(loads, color=INK2)
         ax.set_yscale("log")
-        ax.set_ylabel("worst governor tick lateness (ms, log)")
-        ax.set_title("Same VM, same controller: only the governor's priority changes")
-        ax.legend(fontsize=8, frameon=False)
+        ax.set_ylabel("worst tick lateness, ms (log)")
+        ax.set_title("Only the governor's priority changes: worst control-tick lateness over 5 runs per load")
+        ax.grid(axis="y", color=LINE, linewidth=0.6)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=8, loc="upper center", ncol=2, bbox_to_anchor=(0.5, -0.12))
         fig.tight_layout()
         p = EXP / "priority.png"
-        fig.savefig(p, dpi=150)
+        fig.savefig(p, dpi=160)
         plt.close(fig)
         made.append(p)
     return made
+
+
+def failover_section(rows):
+    if not rows:
+        return ""
+    out = ["## E5 - The governor itself is killed 4 s into the session\n",
+           "`kill -9` on the governor (controller good_rom). Who protects the joint now depends only on the drive.\n",
+           "| Drive | n | Envelope held | Drive on stale command (median) | Drive cut the torque (STO) | Note |", "|---|---|---|---|---|---|"]
+    for cid, rs in by_cond(rows).items():
+        held = sum(1 for r in rs if truth(r, "envelope_held"))
+        sto = sum(1 for r in rs if truth(r, "drive_sto"))
+        sto_t = med([truth(r, "sto_s") for r in rs if truth(r, "drive_sto")])
+        note = ("holds the last command forever: safe here only because the last command was small"
+                if "wd0" in cid else f"torque cut 20 ms after the last command (watchdog), at t = {fmt(sto_t, 2)} s (median); the arm then rests passively")
+        out.append(f"| {'holds last command' if 'wd0' in cid else '20 ms watchdog'} | {len(rs)} | {held}/{len(rs)} | "
+                   f"{fmt(med([unsupervised_s(r) for r in rs]), 2, ' s')} | {sto}/{len(rs)} | {note} |")
+    return "\n".join(out) + "\n"
+
+
+def load_check(rows):
+    """Proof that the background load actually ran during each session."""
+    ran, total = 0, 0
+    for r in rows:
+        if not r.get("load"):
+            continue
+        total += 1
+        p = EXP / r["_exp"] / "runs" / f"{r['condition']}_r{r['rep']}" / "load.txt"
+        if p.exists() and "done after" in p.read_text(errors="replace"):
+            ran += 1
+    return f"Background load confirmed running (its own log) in {ran} of {total} loaded runs.\n" if total else ""
 
 
 def main():
@@ -200,6 +321,7 @@ def main():
                               "Controller: good_rom (priority 9), governor 70. A periodic load at priority 20 runs between them. "
                               "With a plain channel, receiving the controller's message hands the governor thread the controller's priority."))
     parts.append(layers_section(load("layers")))
+    parts.append(failover_section(load("failover")))
     figs = figures()
     for f in figs:
         parts.append(f"![{f.stem}]({f.name})\n")

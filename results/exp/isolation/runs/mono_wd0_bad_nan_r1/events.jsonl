@@ -1,0 +1,6 @@
+{"t":0.0000,"kind":"connect","detail":"controller linked into the governor process (single-process mode)"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}
+{"t":0.1100,"kind":"speed_limit","detail":"joint at 90.8 deg/s, limit 90"}
+{"t":2.0000,"kind":"nan","detail":"controller returned a non-finite torque"}
+{"t":2.0200,"kind":"revoked","detail":"repeated non-finite torque commands; trusted fallback controller takes over"}
+{"t":7.9980,"kind":"joint_finished","detail":"the joint ended the session"}

@@ -2,7 +2,7 @@
 /* Safe Cage dashboard - vanilla JS, no build step. */
 
 const $ = (id) => document.getElementById(id);
-const ENV = { tmax: 4, vmax: 90, rom: [0, 90] };
+const ENV = { tmax: 4, vmax: 90, rom: [0, 90] };   // follows the patient envelope (care plan step 1)
 const F = { NAN: 1, TORQUE: 2, SLEW: 4, SPEED: 8, ROM: 16, MISS: 32, FALLBACK: 64 };
 const OVR_MASK = F.NAN | F.TORQUE | F.SPEED | F.ROM | F.SLEW;
 
@@ -52,6 +52,7 @@ function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
   $("tab-log").hidden = name !== "log";
   $("tab-ai").hidden = name !== "ai";
+  $("tab-rec").hidden = name !== "rec";
 }
 function toast(text) {
   const el = document.createElement("div");
@@ -65,6 +66,7 @@ async function post(path, body) {
 }
 function setBusy(b) {
   busy = b;
+  renderClinic();
   $("ai-go").disabled = b || !target;
   $("replay-go").disabled = b;
   document.querySelectorAll(".run").forEach((x) => x.disabled = b || !target);
@@ -104,8 +106,9 @@ function newSession(msg) {
   S = { T: msg.T || 8, t: [], a: [], v: [], rq: [], ap: [], f: [], o: [], revokeT: null, done: false, mode: msg.mode, iter: msg.iter, peakWin: 0 };
   setBar("bar-win", "b-win", 0, 25); setBar("bar-tot", "b-tot", 0, 100); $("j-state").textContent = "Controller in charge";
   const badge = $("mode");
-  badge.className = "badge " + (msg.mode === "live" ? "live" : msg.mode === "ai" ? "ai" : "replay");
-  badge.textContent = msg.mode === "live" ? "LIVE ON QNX" : msg.mode === "ai" ? (msg.replay ? "AI · RECORDED" : "AI · LIVE ON QNX") : "REPLAY";
+  if (msg.envelope) useEnvelope(msg.envelope);
+  badge.className = "badge " + (msg.mode === "live" ? "live" : msg.mode === "patient" ? "patient" : msg.mode === "ai" ? "ai" : "replay");
+  badge.textContent = msg.mode === "live" ? "LIVE ON QNX" : msg.mode === "patient" ? "PATIENT SESSION" : msg.mode === "ai" ? (msg.replay ? "AI · RECORDED" : "AI TRIAL · LIVE ON QNX") : "REPLAY";
   if (msg.mode === "ai" && aiReplay) { badge.className = "badge ai"; badge.textContent = "AI · RECORDED RUN"; }
   $("title").textContent = msg.title;
   $("subtitle").textContent = msg.subtitle || "";
@@ -148,9 +151,20 @@ function sector(a0, a1, r = R) {
   const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r);
   return `M${CX},${CY} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 0 0 ${x1.toFixed(1)},${y1.toFixed(1)} Z`;
 }
-$("env-sector").setAttribute("d", sector(0, 90, R - 4));
-$("out-sector").setAttribute("d", sector(90, 150, R - 4));
-const [lx, ly] = pt(90, R + 6); $("lbl-90").setAttribute("x", lx - 10); $("lbl-90").setAttribute("y", ly - 2);
+function drawEnvelope() {
+  $("env-sector").setAttribute("d", sector(Math.max(0, ENV.rom[0]), ENV.rom[1], R - 4));
+  $("out-sector").setAttribute("d", sector(ENV.rom[1], 150, R - 4));
+  const [lx, ly] = pt(ENV.rom[1], R + 6); $("lbl-90").setAttribute("x", lx - 10); $("lbl-90").setAttribute("y", ly - 2);
+  $("lbl-90").textContent = `${ENV.rom[1]}°`;
+  document.querySelectorAll(".m-s")[0].textContent = `envelope ${ENV.rom[0]}–${ENV.rom[1]}°`;
+  document.querySelectorAll(".m-s")[1].textContent = `limit ${ENV.vmax} °/s`;
+}
+function useEnvelope(e) {
+  if (!e) return;
+  ENV.tmax = e.tmax; ENV.vmax = e.vmax; ENV.rom = [e.rom_min, e.rom_max];
+  drawEnvelope(); schedule();
+}
+drawEnvelope();
 function setJoint(angle, state) {
   $("forearm").setAttribute("transform", `rotate(${(-angle).toFixed(2)} ${CX} ${CY})`);
   const j = $("joint");
@@ -211,7 +225,7 @@ function line(g, X, Y, xs, ys, color, width, clip) {
 }
 function drawAll() {
   chart("c-angle", -10, 110, [0, 30, 60, 90], (g, X, Y, w, h, L, Rr) => {
-    g.fillStyle = css("--accent-soft"); g.fillRect(L, Y(90), w - L - Rr, Y(0) - Y(90));
+    g.fillStyle = css("--accent-soft"); g.fillRect(L, Y(ENV.rom[1]), w - L - Rr, Y(ENV.rom[0]) - Y(ENV.rom[1]));
     g.setLineDash([4, 4]); g.strokeStyle = css("--accent"); g.globalAlpha = .45; g.lineWidth = 1;
     for (const v of ENV.rom) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - Rr, Y(v)); g.stroke(); }
     g.setLineDash([]); g.globalAlpha = 1;
@@ -230,7 +244,7 @@ function drawAll() {
   });
   chart("c-speed", 0, 180, [0, 90, 180], (g, X, Y, w, h, L, Rr) => {
     g.strokeStyle = css("--bad"); g.lineWidth = 1.2; g.setLineDash([4, 4]);
-    g.beginPath(); g.moveTo(L, Y(90)); g.lineTo(w - Rr, Y(90)); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(L, Y(ENV.vmax)); g.lineTo(w - Rr, Y(ENV.vmax)); g.stroke(); g.setLineDash([]);
     if (S) line(g, X, Y, S.t, S.v.map(Math.abs), css("--accent"), 2, [0, 180]);
   });
 }
@@ -266,9 +280,83 @@ function onSummary(m) {
   $("v-reason").textContent = s.reason ? s.reason.replace(/^revoked by governor: /, "Revoked: ").replace(/^controller died: /, "Died: ")
     : (cls === "pass" ? "Accepted. The cage barely had to touch it." : "Survived, but the cage had to correct it often.");
   const held = s.envelope_held ? "held" : "BREACHED";
-  $("v-stats").innerHTML = `<span>Envelope<b>${held}</b></span><span>Overrides<b>${s.overrides ?? "–"}</b></span><span>Peak speed<b>${Math.round(s.max_speed_dps)}°/s</b></span><span>Max torque<b>${s.max_abs_torque_applied.toFixed(2)}</b></span>`;
+  $("v-stats").innerHTML = `<span>Governor view<b>${held}</b></span><span>Overrides<b>${s.overrides ?? "–"}</b></span><span>Peak speed<b>${Math.round(s.max_speed_dps)}°/s</b></span><span>Max torque<b>${s.max_abs_torque_applied.toFixed(2)}</b></span>`;
   if (s.verdict === "PASSED") setJoint(S.a.at(-1) ?? 20, "");
 }
+
+function onTruth(m) {
+  const t = m.truth; if (!t) return;
+  const box = $("v-stats"); if (!box) return;
+  const el = document.createElement("span");
+  el.innerHTML = `Independent judge<b class="${t.envelope_held ? "ok" : "bad"}">${t.envelope_held ? "held" : "BREACHED"}</b>`;
+  el.title = `Joint process: angle ${t.angle_range_deg[0]}–${t.angle_range_deg[1]}°, peak ${t.max_speed_dps} °/s` + (t.drive_sto ? ", drive watchdog cut the torque" : "");
+  box.appendChild(el);
+}
+
+/* ------------------------------------------------------------ care plan */
+let C = null;
+const esc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function stp(n, cls, status) {
+  const li = $("stp" + n); li.classList.remove("done", "active", "blocked"); if (cls) li.classList.add(cls);
+  $("s" + n).textContent = status;
+}
+function renderClinic() {
+  if (!C) return;
+  const e = C.envelope, t = C.trial, a = C.approval;
+  stp(1, e ? "done" : "active", e ? `${C.patient} · ${e.rom_min}–${e.rom_max}° · ${e.vmax}°/s · ${e.tmax} N·m` : "not set");
+  stp(2, !e ? "" : t ? (t.verdict === "PASSED" ? "done" : "blocked") : "active",
+      !e ? "set the envelope first" : t ? `iteration ${t.iteration}: ${t.verdict}` : "ready");
+  stp(3, a ? "done" : t && t.verdict === "PASSED" ? "active" : "", a ? `approved by ${a.clinician}` : t ? (t.verdict === "PASSED" ? "ready to review" : "not approvable") : "no trial yet");
+  stp(4, C.session ? "done" : a ? "active" : "", C.session ? `last: ${C.session.verdict}` : a ? "ready" : "locked");
+  if (t) {
+    const vc = t.verdict === "PASSED" ? "pass" : t.verdict === "CORRECTED" ? "corr" : "fail";
+    $("evid").innerHTML = `
+      <div class="ev-row"><span>Trial verdict</span><b class="${vc}">${esc(t.verdict)}</b></div>
+      ${t.reason ? `<div class="ev-row"><span>Reason</span><b>${esc(t.reason)}</b></div>` : ""}
+      <div class="ev-row"><span>Independent judge</span><b class="${t.envelope_held ? "pass" : "fail"}">${t.envelope_held ? "envelope held" : "envelope breached"}</b></div>
+      <div class="ev-row"><span>Cage overrides</span><b>${t.overrides ?? "–"}</b></div>
+      <div class="ev-row"><span>Delivered motion</span><b>${t.angle_range_deg ? `${t.angle_range_deg[0].toFixed(0)}–${t.angle_range_deg[1].toFixed(0)}°, peak ${Math.round(t.max_speed_dps)} °/s` : "–"}</b></div>
+      <div class="ev-row"><span>Binary SHA-256</span><b class="hash">${esc(t.binary_sha256.slice(0, 16))}…</b></div>
+      <div class="ev-row"><span>Source</span><b class="hash">${esc(t.source)}</b></div>`;
+  }
+  $("approve-go").disabled = busy || !t || t.verdict !== "PASSED" || !t.envelope_held || !!a;
+  $("session-go").disabled = busy || !a || !target;
+  if (a) $("sess-note").innerHTML = `Approved binary <span class="hash">${esc(a.binary_sha256.slice(0, 12))}</span> by ${esc(a.clinician)} at ${esc(a.approved_at)}. The server re-checks the hash before every session.`;
+  // open the step that needs attention
+  const focus = !e ? 1 : !t || t.verdict !== "PASSED" ? 2 : !a ? 3 : 4;
+  for (let n = 1; n <= 4; n++) if (!$("stp" + n).dataset.user) $("stp" + n).classList.toggle("open", n === focus);
+  renderRecord(C.audit || []);
+}
+const REC_TEXT = {
+  envelope_set: ["Envelope set", ""], trial: ["AI trial in the cage", ""], approved: ["Approved", "r-good"],
+  session_start: ["Patient session started", ""], session_end: ["Patient session ended", ""],
+  emergency_stop: ["Emergency stop", "r-bad"], session_refused: ["Session refused", "r-bad"],
+};
+function renderRecord(items) {
+  const ol = $("rec"); if (!items.length) return;
+  ol.innerHTML = "";
+  for (const r of items.slice().reverse()) {
+    const [label, cls] = REC_TEXT[r.kind] || [r.kind, ""];
+    const d = Object.entries(r).filter(([k]) => !["time", "kind"].includes(k))
+      .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ");
+    const li = document.createElement("li"); li.className = cls;
+    li.innerHTML = `<span class="r-t">${esc(r.time.slice(11))}</span><div><div class="r-k">${esc(label)}</div><div class="r-d">${esc(d)}</div></div>`;
+    ol.appendChild(li);
+  }
+  $("rec-count").textContent = String(items.length);
+}
+document.querySelectorAll(".stp-h").forEach((h) => h.onclick = () => {
+  const li = h.parentElement; li.dataset.user = "1"; li.classList.toggle("open");
+});
+$("env-go").onclick = () => post("/api/clinic/envelope", {
+  patient: $("f-pt").value, clinician: $("f-clin").value, rom_min: $("f-rom0").value, rom_max: $("f-rom1").value,
+  vmax: $("f-vmax").value, tmax: $("f-tmax").value,
+}).then((ok) => ok && toast("Envelope written to the QNX target."));
+$("approve-go").onclick = () => post("/api/clinic/approve", { clinician: $("f-clin").value, note: $("f-note").value });
+$("session-go").onclick = () => post("/api/clinic/session", {}).then((ok) => ok && setBusy(true));
+$("estop").onclick = () => post("/api/estop", { by: $("f-clin").value || "operator" })
+  .then((ok) => ok && toast("Emergency stop sent to /dev/safecage/ctl"));
+async function loadClinic() { C = await (await fetch("/api/clinic")).json(); if (C.envelope) useEnvelope(C.envelope); renderClinic(); }
 
 /* ------------------------------------------------------------ AI loop */
 let aiReplay = false;
@@ -352,6 +440,8 @@ function connect() {
       case "tlm": onTlm(m); break;
       case "event": onEvent(m); break;
       case "summary": onSummary(m); break;
+      case "truth": onTruth(m); break;
+      case "clinic": C = m.state; renderClinic(); break;
       case "stderr": addLog({ t: S && S.t.length ? S.t.at(-1) : 0, kind: "_stderr", detail: m.text }); break;
       case "error": toast(m.text); break;
       case "idle": setBusy(false); break;
@@ -361,6 +451,6 @@ function connect() {
 }
 EVENT_TEXT._stderr = ["Controller said", "info"];
 
-loadStatus().catch(() => toast("Could not reach the dashboard server."));
+loadStatus().then(loadClinic).catch(() => toast("Could not reach the dashboard server."));
 connect();
 drawAll();

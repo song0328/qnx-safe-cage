@@ -8,3 +8,10 @@ __pycache__/
 !results/v1-suite/
 !results/redteam/
 !results/llm-old/
+!results/exp/
+# per-tick CSVs of the comparison runs are large (~68 MB); keep summaries, logs and the two plotted runs
+results/exp/**/run.csv
+results/exp/**/truth.csv
+!results/exp/isolation/runs/cage_wd0_bad_tamper_r0/*.csv
+!results/exp/isolation/runs/mono_wd0_bad_tamper_r0/*.csv
+!results/clinic/

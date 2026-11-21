@@ -40,12 +40,15 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=
         + (" -P" if no_fixed else "") + (" -A" if no_abilities else "")
     jflags = f"-T {T} -p {period}" + (" -s" if spasm else "") + (f" -w {watchdog}" if watchdog else "")
     binary = f"./mono_{ctrl}" if mono else "./governor"
-    load_cmd = f"./load {load} -t {T + 4} & " if load else ""
+    # The load must start AFTER the joint and governor are running: a load above the launching shell's
+    # priority (10) would otherwise starve the shell, and the session would only start once the load ended.
+    # A launcher at 71 waits 1 s into the session, then becomes the load (which sets its own priority).
+    load_cmd = (f"on -p 71 sh -c \"sleep 1; exec ./load {load} -t {T}\" > {rdir}.load 2>&1 & ") if load else ""
     # run detached inside the target so a stalled SSH session cannot kill the run
     # each step separately: removing a /dev/shmem directory can fail, and that must not skip the run
     # no core dumps in any condition: a dump of a large crashed process fills the small /data disk
     cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; slay -f load >/dev/null 2>&1; "
-           f"rm -f {rdir}.out {rdir}.joint {rdir}/*; mkdir -p {rdir}; "
+           f"rm -f {rdir}.out {rdir}.joint {rdir}.load {rdir}/*; mkdir -p {rdir}; "
            f"{load_cmd}./joint {jflags} -o {rdir} > {rdir}.joint 2>&1 & JP=$!; "
            # reaper above every governor priority: a hung single-process governor (prio 70) would otherwise
            # starve sshd and lock up the target (killed by PID; cancelled when the governor exits by itself)
@@ -74,6 +77,8 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=
         fetch(host, f"{rdir}/{f}", d / f)
     fetch(host, f"{rdir}.out", d / "stdout.txt")
     fetch(host, f"{rdir}.joint", d / "joint.txt")
+    if load:
+        fetch(host, f"{rdir}.load", d / "load.txt")      # "load ... done after X s": proof the load ran
     s = None
     if (d / "summary.json").exists() and (d / "summary.json").stat().st_size > 0:
         s = json.loads((d / "summary.json").read_text())

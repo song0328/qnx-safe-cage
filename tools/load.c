@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
         case 't': secs = atof(optarg); break; default: return 2; }
     struct sched_param sp; memset(&sp, 0, sizeof sp); sp.sched_priority = prio;
     if (sched_setscheduler(0, SCHED_FIFO, &sp) == -1) perror("load: priority");
-    double end = now() + secs; volatile unsigned long x = 0;
+    double t0 = now(), end = t0 + secs; volatile unsigned long x = 0;
     if (!strcmp(kind, "cpu")) {
         while (now() < end) {
             double b = now() + busy / 1e6; while (now() < b) x++;
@@ -36,5 +36,6 @@ int main(int argc, char **argv) {
             fsync(fd); close(fd); }
         unlink(file);
     }
+    fprintf(stderr, "load %s prio %d done after %.2f s\n", kind, prio, now() - t0);
     return 0;
 }

@@ -1,0 +1,8 @@
+GOVERNOR controller=/data/sc/bad_nan mode=single-process caged=0 uid=0 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller linked into the governor process (single-process mode)
+EVENT t=0.000 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120
+EVENT t=0.110 speed_limit: joint at 90.8 deg/s, limit 90
+EVENT t=2.000 nan: controller returned a non-finite torque
+EVENT t=2.020 revoked: repeated non-finite torque commands; trusted fallback controller takes over
+EVENT t=7.998 joint_finished: the joint ended the session
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: repeated non-finite torque commands","controller_exit":"killed by governor (repeated non-finite torque commands)","caged":0,"envelope_held":true,"max_abs_torque_applied":0.997,"angle_range_deg":[20.00,40.58],"max_speed_dps":90.8,"overrides":32,"interventions":{"nan":11,"torque":0,"slew":23,"speed":1,"rom":0,"deadline_miss":0,"fallback_ticks":2989},"timing":{"ticks":3999,"period_us":2000,"wall_s":8.11,"governor_late_ticks":0,"lateness_us_p99":1116.8,"lateness_us_p999":3307.4,"lateness_us_max":29879.8},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}
