@@ -1,0 +1,2 @@
+{"t":0.0000,"kind":"connect","detail":"controller linked into the governor process (single-process mode)"}
+{"t":0.0020,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}

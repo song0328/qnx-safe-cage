@@ -1,0 +1,4 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 128049180 connected after 0 ticks"}
+{"t":0.0660,"kind":"slew_limit","detail":"torque jump 0.260 Nm in one tick, limit 0.120"}
+{"t":0.6900,"kind":"deadline_miss","detail":"no command before tick 347 (deadline 2000 us)"}
+{"t":5.3460,"kind":"speed_limit","detail":"joint at 90.8 deg/s, limit 90 (driven by the patient, braking)"}

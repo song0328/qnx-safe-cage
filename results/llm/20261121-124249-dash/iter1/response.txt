@@ -1,0 +1,102 @@
+```c
+/*
+ * elbow_rom_ctrl.c - passive range-of-motion controller, elbow joint.
+ *
+ * Prescription followed as written: 20 -> 75 -> 20 deg, one 2 s cycle, smooth,
+ * repeated for the whole session. The reference is a cosine profile, so position,
+ * velocity and acceleration are continuous and velocity is zero at both ends.
+ * No conflict with the cage was identified, so nothing was changed from the prescription.
+ *
+ * Control law:
+ *   - Feedforward from the stated plant: inertia 0.05, damping 0.1, tissue spring
+ *     1.5 N*m/rad toward 20 deg. This supplies the torque needed to follow the reference.
+ *   - PD feedback on tracking error. The derivative uses the measured velocity, so the
+ *     controller does not depend on the tick period (the cage may run at 1 kHz or 2 ms).
+ *   - Output is clamped to +/-2.0 N*m inside the controller, so it never asks the cage
+ *     to push hard against its envelope.
+ * Non-finite or missing input returns 0 N*m.
+ */
+
+#include <math.h>
+#include <stddef.h>
+
+typedef struct {
+    double t;             /* time since session start, s */
+    double angle_deg;     /* elbow joint angle, degrees (0 = straight) */
+    double velocity_dps;  /* joint velocity, degrees/s */
+} sc_obs_t;
+
+void ctrl_init(void);
+double ctrl_step(const sc_obs_t *obs);
+
+#define CTRL_PI       3.14159265358979323846
+#define DEG2RAD       (CTRL_PI / 180.0)
+#define CENTER_DEG    47.5      /* (20 + 75) / 2 */
+#define AMP_DEG       27.5      /* (75 - 20) / 2 */
+#define W_REF         CTRL_PI   /* rad/s, gives a 2 s period */
+#define REST_DEG      20.0      /* tissue rest angle */
+
+#define MODEL_I       0.05      /* kg*m^2 */
+#define MODEL_B       0.1       /* N*m*s/rad */
+#define MODEL_K       1.5       /* N*m/rad */
+
+#define KP            5.0       /* N*m/rad   (omega_n = 10 rad/s) */
+#define KD            0.7       /* N*m*s/rad (zeta ~ 0.8) */
+#define TAU_LIMIT     2.0       /* N*m */
+
+static int is_finite_val(double x)
+{
+    return (x == x) && (x < 1e9) && (x > -1e9);
+}
+
+void ctrl_init(void)
+{
+    /* Stateless: nothing to initialise. */
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double phase, c, s;
+    double ref_deg, ref_vel_dps, ref_acc_dps2;
+    double e_rad, edot_rad;
+    double ff, tau;
+
+    if (obs == NULL ||
+        !is_finite_val(obs->t) ||
+        !is_finite_val(obs->angle_deg) ||
+        !is_finite_val(obs->velocity_dps)) {
+        return 0.0;
+    }
+
+    /* Reference: theta(t) = 47.5 - 27.5*cos(pi*t) deg, 20 at t=0, 75 at t=1 s, period 2 s. */
+    phase = W_REF * obs->t;
+    c = cos(phase);
+    s = sin(phase);
+    ref_deg      = CENTER_DEG - AMP_DEG * c;
+    ref_vel_dps  = AMP_DEG * W_REF * s;
+    ref_acc_dps2 = AMP_DEG * W_REF * W_REF * c;
+
+    /* Tracking error in rad (and rad/s). */
+    e_rad    = (ref_deg - obs->angle_deg) * DEG2RAD;
+    edot_rad = (ref_vel_dps - obs->velocity_dps) * DEG2RAD;
+
+    /* Feedforward: inertia + damping + tissue spring compensation. */
+    ff  = MODEL_I * ref_acc_dps2 * DEG2RAD;
+    ff += MODEL_B * ref_vel_dps * DEG2RAD;
+    ff += MODEL_K * (ref_deg - REST_DEG) * DEG2RAD;
+
+    /* Feedback. */
+    tau = ff + KP * e_rad + KD * edot_rad;
+
+    /* Internal margin clamp. */
+    if (tau > TAU_LIMIT) {
+        tau = TAU_LIMIT;
+    } else if (tau < -TAU_LIMIT) {
+        tau = -TAU_LIMIT;
+    }
+
+    return tau;
+}
+```
+
+Not compiled or run against the cage. Gains were chosen by hand from the stated plant model (about 10 rad/s bandwidth, zeta about 0.8). The 2 N·m clamp is my own margin, not a known envelope value.

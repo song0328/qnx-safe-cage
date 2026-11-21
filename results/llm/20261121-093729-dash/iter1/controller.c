@@ -1,0 +1,200 @@
+/*
+ * Elbow passive range-of-motion (PROM) controller - 1 DOF exoskeleton.
+ *
+ * CHANGES FROM THE PRESCRIPTION (please review with the therapist):
+ *  1. Speed. "20 -> 85 -> 20 deg every 1.5 s" means a peak speed of about
+ *     136 deg/s. That is too fast for passive ROM on a post-stroke elbow:
+ *     spasticity gets worse as stretch speed goes up, and a fast stretch can
+ *     set off a catch or clonus that the cage would then have to fight.
+ *     Peak speed is capped at VMAX_DPS = 60 deg/s. That makes one cycle
+ *     about 3.4 s instead of 1.5 s. Range (20..85 deg) and the smooth
+ *     sinusoidal shape are kept. To change the speed, edit VMAX_DPS only.
+ *  2. Soft start. From wherever the arm starts, it first moves slowly to
+ *     20 deg (minimum-jerk path, at most about 30 deg/s). The cycling speed
+ *     then ramps up over CYCLE_RAMP_S, so the first command has no jump.
+ *  3. Yield on resistance. If the arm falls behind the target (tone,
+ *     spasm, guarding), the target slows down and stops instead of pulling
+ *     harder. It carries on once the arm catches up. Torque is limited and
+ *     its rate of change is limited too.
+ *  4. Bad input. If the observation is missing or not a finite number, the
+ *     torque fades smoothly to 0. The relaxed tissue then holds the arm
+ *     near 20 deg.
+ * Every target angle is clamped to [20, 85] deg.
+ */
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include "ctrl_api.h"
+
+/* ---- prescription / safety parameters ---- */
+#define Q_LO_DEG        20.0
+#define Q_HI_DEG        85.0
+#define VMAX_DPS        60.0     /* peak cycling speed, deg/s */
+#define APPROACH_VMAX   30.0     /* peak speed of initial approach, deg/s */
+#define CYCLE_RAMP_S    2.0      /* frequency ramp-in time, s */
+#define TAU_MAX         3.0      /* torque limit, N*m */
+#define TAU_RATE        40.0     /* torque slew limit, N*m/s */
+#define ERR_SLOW_DEG    4.0      /* start slowing target above this error */
+#define ERR_STOP_DEG    10.0     /* target stops at this error */
+#define GATE_RATE       2.0      /* 1/s, smoothing of the slow/stop gate */
+
+/* ---- plant model (for feedforward) ---- */
+#define J_INERTIA       0.05     /* kg*m^2 */
+#define B_DAMP          0.1      /* N*m*s/rad */
+#define K_TISSUE        1.5      /* N*m/rad, rest at 20 deg */
+#define Q_REST_DEG      20.0
+
+/* ---- feedback gains: wn = 15 rad/s, critically damped ---- */
+#define WN              15.0
+#define KP              (J_INERTIA * WN * WN)                 /* N*m/rad   */
+#define KD              (2.0 * WN * J_INERTIA - B_DAMP)       /* N*m*s/rad */
+
+#define DT_NOM          0.002
+#define PI_D            3.14159265358979323846
+#define D2R             (PI_D / 180.0)
+
+static bool   s_first;
+static double s_t_prev;
+static double s_tau;          /* last torque command */
+static double s_vel_f;        /* filtered velocity, deg/s */
+static double s_gate;         /* 0..1 trajectory speed factor */
+static int    s_mode;         /* 0 = approach, 1 = cycling */
+static double s_q0;           /* approach start angle */
+static double s_Ta;           /* approach duration */
+static double s_tau_traj;     /* gated trajectory time within mode */
+static double s_phi;          /* cycle phase, rad */
+static double s_phid_prev;    /* previous phase rate */
+static double s_qdes_last;
+
+static double clampd(double x, double lo, double hi)
+{
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+static double slew(double target, double dt)
+{
+    double step = TAU_RATE * dt;
+    double d = clampd(target - s_tau, -step, step);
+    return s_tau + d;
+}
+
+void ctrl_init(void)
+{
+    s_first = true;
+    s_t_prev = 0.0;
+    s_tau = 0.0;
+    s_vel_f = 0.0;
+    s_gate = 1.0;
+    s_mode = 0;
+    s_q0 = Q_LO_DEG;
+    s_Ta = 1.0;
+    s_tau_traj = 0.0;
+    s_phi = 0.0;
+    s_phid_prev = 0.0;
+    s_qdes_last = Q_LO_DEG;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    /* ---- input validation ---- */
+    if (obs == NULL || !isfinite(obs->t) || !isfinite(obs->angle_deg) ||
+        !isfinite(obs->velocity_dps)) {
+        s_tau = slew(0.0, DT_NOM);
+        if (!isfinite(s_tau)) s_tau = 0.0;
+        return s_tau;
+    }
+
+    const double q  = obs->angle_deg;
+    const double qd = obs->velocity_dps;
+
+    double dt = DT_NOM;
+    if (s_first) {
+        s_first = false;
+        s_vel_f = qd;
+        s_q0 = clampd(q, Q_LO_DEG - 30.0, Q_HI_DEG + 30.0);
+        {
+            double dist = fabs(s_q0 - Q_LO_DEG);
+            double Ta = 1.875 * dist / APPROACH_VMAX;   /* min-jerk peak v */
+            s_Ta = Ta < 1.0 ? 1.0 : Ta;
+        }
+        s_qdes_last = clampd(s_q0, Q_LO_DEG, Q_HI_DEG);
+    } else {
+        dt = obs->t - s_t_prev;
+        if (!(dt > 0.0) || dt > 0.02) dt = DT_NOM;
+    }
+    s_t_prev = obs->t;
+
+    /* light velocity filter (~50 Hz) */
+    {
+        double a = dt / (dt + 1.0 / (2.0 * PI_D * 50.0));
+        s_vel_f += a * (qd - s_vel_f);
+    }
+
+    /* ---- yield gate: slow / stop the target when tracking error is large ---- */
+    {
+        double e = fabs(s_qdes_last - q);
+        double g_tgt;
+        if (e <= ERR_SLOW_DEG)      g_tgt = 1.0;
+        else if (e >= ERR_STOP_DEG) g_tgt = 0.0;
+        else g_tgt = 1.0 - (e - ERR_SLOW_DEG) / (ERR_STOP_DEG - ERR_SLOW_DEG);
+        double step = GATE_RATE * dt;
+        s_gate += clampd(g_tgt - s_gate, -step, step);
+        s_gate = clampd(s_gate, 0.0, 1.0);
+    }
+
+    /* ---- reference trajectory ---- */
+    double q_des, qd_des, qdd_des;    /* deg, deg/s, deg/s^2 */
+
+    if (s_mode == 0) {
+        s_tau_traj += s_gate * dt;
+        double r = clampd(s_tau_traj / s_Ta, 0.0, 1.0);
+        double r2 = r * r, r3 = r2 * r;
+        double s   = r3 * (10.0 - 15.0 * r + 6.0 * r2);
+        double sd  = 30.0 * r2 * (1.0 - r) * (1.0 - r) / s_Ta;
+        double sdd = 60.0 * r * (1.0 - 3.0 * r + 2.0 * r2) / (s_Ta * s_Ta);
+        double dq = Q_LO_DEG - s_q0;
+        q_des   = s_q0 + dq * s;
+        qd_des  = dq * sd * s_gate;
+        qdd_des = dq * sdd * s_gate * s_gate;
+        if (r >= 1.0) {
+            s_mode = 1;
+            s_tau_traj = 0.0;
+            s_phi = 0.0;
+            s_phid_prev = 0.0;
+        }
+    } else {
+        const double A = 0.5 * (Q_HI_DEG - Q_LO_DEG);
+        const double C = 0.5 * (Q_HI_DEG + Q_LO_DEG);
+        const double omega = VMAX_DPS / A;            /* rad/s */
+
+        s_tau_traj += s_gate * dt;
+        double r = clampd(s_tau_traj / CYCLE_RAMP_S, 0.0, 1.0);
+        double ramp = r * r * (3.0 - 2.0 * r);        /* smoothstep */
+        double phid = omega * ramp * s_gate;
+        double phidd = clampd((phid - s_phid_prev) / dt, -20.0, 20.0);
+        s_phid_prev = phid;
+
+        s_phi += phid * dt;
+        if (s_phi > 2.0 * PI_D) s_phi -= 2.0 * PI_D;
+
+        double c = cos(s_phi), sn = sin(s_phi);
+        q_des   = C - A * c;
+        qd_des  = A * sn * phid;
+        qdd_des = A * (c * phid * phid + sn * phidd);
+    }
+
+    q_des = clampd(q_des, Q_LO_DEG, Q_HI_DEG);
+    s_qdes_last = q_des;
+
+    /* ---- control law: model feedforward + PD ---- */
+    double ff = J_INERTIA * qdd_des * D2R
+              + B_DAMP * qd_des * D2R
+              + K_TISSUE * (q_des - Q_REST_DEG) * D2R;
+    double fb = KP * (q_des - q) * D2R + KD * (qd_des - s_vel_f) * D2R;
+
+    double tau = clampd(ff + fb, -TAU_MAX, TAU_MAX);
+    tau = slew(tau, dt);
+    if (!isfinite(tau)) tau = 0.0;
+    s_tau = tau;
+    return tau;
+}

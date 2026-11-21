@@ -1,0 +1,6 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 134340636 connected after 0 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 4.000 Nm in one tick, limit 0.120"}
+{"t":0.7820,"kind":"speed_limit","detail":"joint at -92.1 deg/s, limit 90"}
+{"t":0.9760,"kind":"speed_limit","detail":"6 separate over-speed episodes: the controller is driving the arm into the brake; braking now counts against it"}
+{"t":1.2260,"kind":"revoked","detail":"kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over"}
+{"t":7.9980,"kind":"joint_finished","detail":"the joint ended the session"}

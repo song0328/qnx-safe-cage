@@ -1,0 +1,4 @@
+verdict: REJECTED - revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)
+controller exit: killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))
+envelope interventions (ticks where the cage overrode your command): slew=1044, speed=59, rom=2
+achieved: angle range [20.0, 79.59] deg, peak speed 79.0 deg/s, max applied torque 2.099 N*m

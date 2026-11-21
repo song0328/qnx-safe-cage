@@ -1,0 +1,5 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 129835036 connected after 4 ticks"}
+{"t":0.0000,"kind":"deadline_miss","detail":"no command before tick 1 (deadline 2000 us)"}
+{"t":5.0720,"kind":"speed_limit","detail":"joint at 90.0 deg/s, limit 90 (driven by the patient, braking)"}
+{"t":5.0740,"kind":"slew_limit","detail":"torque jump 0.943 Nm in one tick, limit 0.120"}
+{"t":5.1000,"kind":"speed_limit","detail":"6 separate over-speed episodes: the controller is driving the arm into the brake; braking now counts against it"}

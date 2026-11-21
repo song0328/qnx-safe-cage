@@ -1,0 +1,4 @@
+verdict: CORRECTED
+controller exit: finished normally
+envelope interventions (ticks where the cage overrode your command): slew=275, speed=13
+achieved: angle range [20.0, 61.61] deg, peak speed 71.2 deg/s, max applied torque 1.814 N*m

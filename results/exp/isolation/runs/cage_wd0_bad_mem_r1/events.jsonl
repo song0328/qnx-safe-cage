@@ -1,0 +1,3 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 14770204 connected after 0 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}
+{"t":0.1160,"kind":"controller_died","detail":"memory protection fault (touched memory it does not own) [signal 11]"}

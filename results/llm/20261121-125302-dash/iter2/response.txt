@@ -1,0 +1,105 @@
+```c
+/*
+ * Elbow passive ROM controller (simulated 1-DOF joint).
+ *
+ * Prescription followed as written: 20 -> 75 -> 20 deg, one cycle every 2 s,
+ * smooth raised-cosine reference, repeated for the whole session.
+ * Changes from the previous version: added <stddef.h> so NULL is defined
+ * (the compile failure). No other behaviour change.
+ * The clinician's envelope is not visible here. If it is narrower than
+ * 20..75 deg, the cage overrides commands and this file does not second-guess it.
+ * The only local bound is the +/-3.0 N*m output clamp.
+ *
+ * Control: feedforward inverse of the approximate plant (inertia, viscous
+ * damping, and the tissue spring about 20 deg), plus PD feedback on the
+ * tracking error. Time comes from obs->t, so the trajectory follows session
+ * time and works for any tick rate (2 ms or 1 ms).
+ */
+#include <math.h>
+#include <stddef.h>
+#include "ctrl_api.h"
+
+#define SC_PI        3.14159265358979323846
+#define SC_DEG2RAD   (SC_PI / 180.0)
+
+#define SC_I         0.05    /* kg m^2, forearm + device inertia */
+#define SC_B         0.1     /* N m s / rad, viscous damping */
+#define SC_K         1.5     /* N m / rad, tissue spring stiffness */
+#define SC_THETA0    20.0    /* deg, tissue rest position */
+
+#define SC_MID       47.5    /* deg, (20 + 75) / 2 */
+#define SC_AMP       27.5    /* deg, half of the 55 deg swing */
+#define SC_PERIOD    2.0     /* s, one full 20->75->20 cycle */
+
+#define SC_KP        4.0     /* N m / rad */
+#define SC_KD        0.6     /* N m s / rad */
+#define SC_TAU_MAX   3.0     /* N m, local output bound */
+
+static double wrap_period(double t)
+{
+    double p = fmod(t, SC_PERIOD);
+    if (p < 0.0) {
+        p += SC_PERIOD;
+    }
+    return p;
+}
+
+void ctrl_init(void)
+{
+    /* Stateless controller: nothing to initialise. */
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    const double w = 2.0 * SC_PI / SC_PERIOD;
+    double ph, c, s;
+    double th_ref_deg, w_ref_deg, a_ref_deg;
+    double th_ref, w_ref, a_ref, th, om, th0;
+    double tau_ff, e, ed, tau;
+
+    if (obs == NULL ||
+        !isfinite(obs->t) ||
+        !isfinite(obs->angle_deg) ||
+        !isfinite(obs->velocity_dps)) {
+        return 0.0;
+    }
+
+    /* Reference: theta = MID - AMP*cos(w t), starts at 20 deg with zero velocity. */
+    ph = w * wrap_period(obs->t);
+    c = cos(ph);
+    s = sin(ph);
+    th_ref_deg = SC_MID - SC_AMP * c;
+    w_ref_deg  = SC_AMP * w * s;
+    a_ref_deg  = SC_AMP * w * w * c;
+
+    th_ref = th_ref_deg * SC_DEG2RAD;
+    w_ref  = w_ref_deg  * SC_DEG2RAD;
+    a_ref  = a_ref_deg  * SC_DEG2RAD;
+
+    th  = obs->angle_deg    * SC_DEG2RAD;
+    om  = obs->velocity_dps * SC_DEG2RAD;
+    th0 = SC_THETA0 * SC_DEG2RAD;
+
+    /* Feedforward: I*a + b*w + k*(theta - theta0) cancels the modelled plant. */
+    tau_ff = SC_I * a_ref + SC_B * w_ref + SC_K * (th_ref - th0);
+
+    /* Feedback on tracking error. */
+    e   = th_ref - th;
+    ed  = w_ref - om;
+    tau = tau_ff + SC_KP * e + SC_KD * ed;
+
+    if (!isfinite(tau)) {
+        return 0.0;
+    }
+    if (tau > SC_TAU_MAX) {
+        tau = SC_TAU_MAX;
+    } else if (tau < -SC_TAU_MAX) {
+        tau = -SC_TAU_MAX;
+    }
+    return tau;
+}
+```
+
+Fixed the compile error by including `<stddef.h>` for `NULL`; the control law is unchanged.
+I could not compile or run this in the QNX cage, so the build and the cage's acceptance are unverified.
+The clinician's safety envelope is not visible to me, so the 20–75° trajectory is followed as written.

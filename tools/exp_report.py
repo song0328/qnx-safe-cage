@@ -258,16 +258,21 @@ def figures():
         w = 0.36
         for i, (gp, col, lab) in enumerate((("gov70", CAGE, "governor at 70 (above anything a non-root process can reach)"),
                                             ("gov10", MONO, "governor at 10 (an ordinary application priority)"))):
-            vals = []
+            mids, top = [], []
             for l in loads:
                 rs = g.get(f"{gp}_{l}", [])
-                vals.append(max([((r.get("timing") or {}).get("lateness_us_max") or 0) for r in rs] or [0]) / 1000 or 0.1)
-            ax.bar([x + (i - 0.5) * (w + 0.04) for x in range(len(loads))], vals, w, color=col, label=lab)
+                worst = sorted(((r.get("timing") or {}).get("lateness_us_max") or 0) / 1000 for r in rs) or [0.1]
+                mids.append(max(worst[len(worst) // 2], 0.1))
+                top.append(max(worst[-1], 0.1))
+            xs = [x + (i - 0.5) * (w + 0.04) for x in range(len(loads))]
+            ax.bar(xs, mids, w, color=col, label=lab)
+            ax.vlines(xs, mids, top, color=INK2, linewidth=1)   # thin line up to the worst run
+            ax.scatter(xs, top, s=10, color=INK2, zorder=3)
         ax.set_xticks(range(len(loads)))
         ax.set_xticklabels(loads, color=INK2)
         ax.set_yscale("log")
-        ax.set_ylabel("worst tick lateness, ms (log)")
-        ax.set_title("Only the governor's priority changes: worst control-tick lateness over 5 runs per load")
+        ax.set_ylabel("worst tick lateness per run, ms (log)")
+        ax.set_title("Only the governor's priority changes: worst control-tick lateness per run (bar: median of 5, dot: worst)")
         ax.grid(axis="y", color=LINE, linewidth=0.6)
         ax.set_axisbelow(True)
         ax.legend(fontsize=8, loc="upper center", ncol=2, bbox_to_anchor=(0.5, -0.12))

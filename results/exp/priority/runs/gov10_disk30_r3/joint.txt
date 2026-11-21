@@ -1,0 +1,2 @@
+JOINT ready period=2000us T=8.0s spasm=0 watchdog=0ms
+TRUTH {"envelope_held":true,"breach_ticks":0,"first_breach_s":-1.0000,"hit_anatomical_stop":false,"first_stop_s":-1.0000,"max_abs_torque":1.031,"angle_range_deg":[19.52,60.35],"max_speed_dps":32.7,"ticks_over_99dps":0,"stale_command_ticks":88,"drive_sto":false,"sto_s":-1.0000,"watchdog_ms":0,"ticks":4000}

@@ -1,0 +1,4 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 88932382 connected after 0 ticks"}
+{"t":0.0580,"kind":"deadline_miss","detail":"no command before tick 30 (deadline 2000 us)"}
+{"t":0.4780,"kind":"slew_limit","detail":"torque jump -0.416 Nm in one tick, limit 0.120"}
+{"t":2.2320,"kind":"revoked","detail":"missed too many control deadlines (more than 10 % within 0.5 s); trusted fallback controller takes over"}

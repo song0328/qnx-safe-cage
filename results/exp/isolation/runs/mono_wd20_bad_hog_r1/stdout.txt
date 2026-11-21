@@ -1,0 +1,3 @@
+GOVERNOR controller=/data/sc/bad_hog mode=single-process caged=0 uid=0 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller linked into the governor process (single-process mode)
+EVENT t=0.002 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120

@@ -1,0 +1,205 @@
+```c
+/*
+ * ctrl.c - Passive range-of-motion controller for a 1-DOF elbow exoskeleton.
+ *
+ * Prescription: move smoothly 20 -> 75 -> 20 deg, one cycle every 2 s, for the whole session.
+ * Target: q(t) = 20 + 27.5*(1 - cos(pi*t)) deg. Peak speed is about 86 deg/s.
+ * Peak model torque is about 1.6 N*m: tissue spring 1.44, inertia 0.24, damping 0.15.
+ *
+ * CHANGES / ADDITIONS TO THE PRESCRIPTION (I cannot see the cage envelope):
+ *  1. Soft start: the motion grows from zero to the full 20-75 deg range over the first 4 s
+ *     (2 cycles), so it does not start at full speed.
+ *  2. Start from where the arm is: if the arm is not at 20 deg at the start, the target
+ *     blends from the measured angle to 20 deg over 1.5 s, so it does not jump.
+ *  3. Back off instead of pushing: if the tracking error stays large (patient resistance,
+ *     spasticity, or the cage overriding commands), or the torque stays at its self-imposed
+ *     limit, the motion range shrinks smoothly toward rest at 20 deg. When tracking is good
+ *     again, the range slowly recovers (about 10 s). Under heavy resistance or a tighter
+ *     envelope, the range will be smaller than 20-75.
+ *  4. Torque is limited to +/-3 N*m and to a rate of 60 N*m/s. If readings look wrong
+ *     (non-finite or implausible), the torque ramps to zero.
+ *  When nothing resists, the frequency (0.5 Hz) and the full range (20-75 deg) are unchanged.
+ */
+#include <stddef.h>
+#include <math.h>
+#include <stdbool.h>
+#include "ctrl_api.h"
+
+#define PI_D        3.14159265358979323846
+#define DEG2RAD     (PI_D / 180.0)
+
+/* Prescription */
+#define Q_REST_DEG  20.0
+#define Q_HALF_DEG  27.5            /* (75-20)/2 */
+#define PERIOD_S    2.0
+#define OMEGA       (2.0 * PI_D / PERIOD_S)
+
+/* Plant model (approximate) */
+#define J_MODEL     0.05            /* kg*m^2 */
+#define B_MODEL     0.1             /* N*m*s/rad */
+#define K_MODEL     1.5             /* N*m/rad toward 20 deg */
+
+/* Feedback: wn ~ 20 rad/s, zeta ~ 0.9 on the model inertia */
+#define KP          20.0            /* N*m/rad */
+#define KD          1.7             /* N*m*s/rad */
+
+/* Soft-start timing */
+#define RAMP_T      4.0
+#define BLEND_T     1.5
+
+/* Self-imposed output limits */
+#define TAU_MAX     3.0
+#define DTAU_MAX    60.0            /* N*m/s */
+
+/* Back-off logic */
+#define ERR_HI_DEG  8.0
+#define ERR_LO_DEG  4.0
+#define G_DOWN_RATE 0.5             /* 1/s */
+#define G_UP_RATE   0.1             /* 1/s */
+#define G_FILT_TAU  0.3             /* s */
+#define ERR_FILT_TAU 0.1            /* s */
+#define SAT_TIME_MAX 0.2            /* s */
+
+/* Plausibility */
+#define Q_MIN_PLAUS  -10.0
+#define Q_MAX_PLAUS  150.0
+#define V_MAX_PLAUS  500.0
+
+static bool   s_started;
+static double s_t0;
+static double s_tprev;
+static double s_e0_deg;     /* initial offset from rest */
+static double s_tau_prev;
+static double s_g;          /* intensity target 0..1 */
+static double s_gf;         /* filtered intensity */
+static double s_errf;       /* filtered |tracking error|, deg */
+static double s_sat_time;
+
+static double clampd(double x, double lo, double hi)
+{
+    return (x < lo) ? lo : ((x > hi) ? hi : x);
+}
+
+/* Quintic smoothstep over duration T: value and its 1st and 2nd time derivatives. */
+static void smooth5(double t, double T, double *s, double *sd, double *sdd)
+{
+    if (t <= 0.0) { *s = 0.0; *sd = 0.0; *sdd = 0.0; return; }
+    if (t >= T)   { *s = 1.0; *sd = 0.0; *sdd = 0.0; return; }
+    double u = t / T;
+    double u2 = u * u;
+    *s   = u2 * u * (10.0 - 15.0 * u + 6.0 * u2);
+    *sd  = 30.0 * u2 * (1.0 - u) * (1.0 - u) / T;
+    *sdd = 60.0 * u * (1.0 - u) * (1.0 - 2.0 * u) / (T * T);
+}
+
+static double rate_limit_out(double tau_cmd, double dt)
+{
+    if (!isfinite(tau_cmd)) tau_cmd = 0.0;
+    tau_cmd = clampd(tau_cmd, -TAU_MAX, TAU_MAX);
+    double dmax = DTAU_MAX * dt;
+    double tau = clampd(tau_cmd, s_tau_prev - dmax, s_tau_prev + dmax);
+    if (!isfinite(tau)) tau = 0.0;
+    s_tau_prev = tau;
+    return tau;
+}
+
+void ctrl_init(void)
+{
+    s_started  = false;
+    s_t0       = 0.0;
+    s_tprev    = 0.0;
+    s_e0_deg   = 0.0;
+    s_tau_prev = 0.0;
+    s_g        = 1.0;
+    s_gf       = 1.0;
+    s_errf     = 0.0;
+    s_sat_time = 0.0;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    double dt = 0.002;
+
+    if (obs == NULL || !isfinite(obs->t) || !isfinite(obs->angle_deg) ||
+        !isfinite(obs->velocity_dps)) {
+        return rate_limit_out(0.0, dt);
+    }
+
+    double q_deg = obs->angle_deg;
+    double v_dps = obs->velocity_dps;
+
+    if (!s_started) {
+        s_started = true;
+        s_t0 = obs->t;
+        s_tprev = obs->t;
+        s_e0_deg = clampd(q_deg - Q_REST_DEG, -60.0, 60.0);
+    } else {
+        double d = obs->t - s_tprev;
+        if (isfinite(d) && d > 0.0) dt = clampd(d, 0.0005, 0.01);
+        s_tprev = obs->t;
+    }
+
+    /* Implausible readings: relax (no active torque) and drop the intensity. */
+    if (q_deg < Q_MIN_PLAUS || q_deg > Q_MAX_PLAUS || fabs(v_dps) > V_MAX_PLAUS) {
+        s_g = 0.0;
+        s_gf = 0.0;
+        return rate_limit_out(0.0, dt);
+    }
+
+    double tr = obs->t - s_t0;
+    if (!isfinite(tr) || tr < 0.0) tr = 0.0;
+
+    /* Intensity filter (varies slowly; its derivative is ignored in the feedforward). */
+    s_gf += (s_g - s_gf) * clampd(dt / G_FILT_TAU, 0.0, 1.0);
+    s_gf = clampd(s_gf, 0.0, 1.0);
+
+    /* Reference trajectory in degrees */
+    double r, rd, rdd;
+    smooth5(tr, RAMP_T, &r, &rd, &rdd);
+    double ph = OMEGA * fmod(tr, PERIOD_S);
+    double c = cos(ph), sn = sin(ph);
+    double A = s_gf * Q_HALF_DEG;
+
+    double qref   = Q_REST_DEG + A * r * (1.0 - c);
+    double qdref  = A * (rd * (1.0 - c) + r * OMEGA * sn);
+    double qddref = A * (rdd * (1.0 - c) + 2.0 * rd * OMEGA * sn + r * OMEGA * OMEGA * c);
+
+    /* Blend from the initial measured position to rest */
+    double b, bd, bdd;
+    smooth5(tr, BLEND_T, &b, &bd, &bdd);
+    qref   += s_e0_deg * (1.0 - b);
+    qdref  += -s_e0_deg * bd;
+    qddref += -s_e0_deg * bdd;
+
+    /* Convert to radians */
+    double qr   = qref * DEG2RAD;
+    double qdr  = qdref * DEG2RAD;
+    double qddr = qddref * DEG2RAD;
+    double q    = q_deg * DEG2RAD;
+    double v    = v_dps * DEG2RAD;
+
+    double tau_ff = J_MODEL * qddr + B_MODEL * qdr + K_MODEL * (qr - Q_REST_DEG * DEG2RAD);
+    double e  = qr - q;
+    double ed = qdr - v;
+    double tau = tau_ff + KP * e + KD * ed;
+
+    /* Strain monitoring -> back-off */
+    double e_deg = fabs(qref - q_deg);
+    s_errf += (e_deg - s_errf) * clampd(dt / ERR_FILT_TAU, 0.0, 1.0);
+
+    if (fabs(tau) >= TAU_MAX) s_sat_time += dt;
+    else                      s_sat_time = 0.0;
+
+    bool strained = (s_errf > ERR_HI_DEG) || (s_sat_time > SAT_TIME_MAX);
+    if (strained) {
+        s_g -= G_DOWN_RATE * dt;
+    } else if (s_errf < ERR_LO_DEG) {
+        s_g += G_UP_RATE * dt;
+    }
+    s_g = clampd(s_g, 0.0, 1.0);
+
+    return rate_limit_out(tau, dt);
+}
+```
+The compile error came from a missing `#include <stddef.h>`, which defines `NULL`. I added it and left the control logic unchanged.
+I have not compiled this or run it in the cage, so I haven't confirmed that it builds or behaves correctly.

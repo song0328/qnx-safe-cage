@@ -1,0 +1,8 @@
+GOVERNOR controller=/data/sc/rt_213448_a4 mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 131174428 connected after 0 ticks
+EVENT t=0.158 torque_limit: requested -100.00 Nm, limit 4.0 Nm
+EVENT t=0.158 slew_limit: torque jump -4.000 Nm in one tick, limit 0.120
+EVENT t=0.996 deadline_miss: no command before tick 498 (deadline 2000 us)
+EVENT t=5.074 speed_limit: joint at 92.1 deg/s, limit 90 (driven by the patient, braking)
+EVENT t=5.110 speed_limit: 6 separate over-speed episodes: the controller is driving the arm into the brake; braking now counts against it
+SUMMARY {"verdict":"CORRECTED","reason":"","controller_exit":"finished normally","caged":1,"envelope_held":true,"max_abs_torque_applied":1.501,"angle_range_deg":[8.21,55.08],"max_speed_dps":92.1,"overrides":73,"interventions":{"nan":0,"torque":50,"slew":257,"speed":24,"rom":0,"deadline_miss":7,"fallback_ticks":7,"brake_disturbance":5},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.16,"governor_late_ticks":0,"lateness_us_p99":1334.7,"lateness_us_p999":2632.1,"lateness_us_max":28028.4},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

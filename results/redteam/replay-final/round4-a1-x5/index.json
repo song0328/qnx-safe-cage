@@ -1,0 +1,317 @@
+[
+ {
+  "controller": "rt_143143_a1",
+  "tag": "rt_143143_a1_r0",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.12,
+  "angle_range_deg": [
+   3.13,
+   86.54
+  ],
+  "max_speed_dps": 92.4,
+  "overrides": 29,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 753,
+   "speed": 27,
+   "rom": 2,
+   "deadline_miss": 0,
+   "fallback_ticks": 3326,
+   "brake_disturbance": 106
+  },
+  "timing": {
+   "ticks": 3999,
+   "period_us": 2000,
+   "wall_s": 8.2,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1541.5,
+   "lateness_us_p999": 6073.6,
+   "lateness_us_max": 34886.1
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  },
+  "truth": {
+   "envelope_held": true,
+   "breach_ticks": 0,
+   "first_breach_s": -1.0,
+   "hit_anatomical_stop": false,
+   "first_stop_s": -1.0,
+   "max_abs_torque": 3.12,
+   "angle_range_deg": [
+    3.13,
+    86.54
+   ],
+   "max_speed_dps": 92.4,
+   "ticks_over_99dps": 0,
+   "stale_command_ticks": 16,
+   "drive_sto": false,
+   "sto_s": -1.0,
+   "watchdog_ms": 0,
+   "ticks": 4000
+  }
+ },
+ {
+  "controller": "rt_143143_a1",
+  "tag": "rt_143143_a1_r1",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.0,
+  "angle_range_deg": [
+   3.09,
+   86.52
+  ],
+  "max_speed_dps": 92.3,
+  "overrides": 29,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 753,
+   "speed": 27,
+   "rom": 2,
+   "deadline_miss": 2,
+   "fallback_ticks": 3327,
+   "brake_disturbance": 106
+  },
+  "timing": {
+   "ticks": 3998,
+   "period_us": 2000,
+   "wall_s": 8.14,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1350.2,
+   "lateness_us_p999": 3914.9,
+   "lateness_us_max": 22122.9
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  },
+  "truth": {
+   "envelope_held": true,
+   "breach_ticks": 0,
+   "first_breach_s": -1.0,
+   "hit_anatomical_stop": false,
+   "first_stop_s": -1.0,
+   "max_abs_torque": 3.0,
+   "angle_range_deg": [
+    3.09,
+    86.52
+   ],
+   "max_speed_dps": 92.3,
+   "ticks_over_99dps": 0,
+   "stale_command_ticks": 14,
+   "drive_sto": false,
+   "sto_s": -1.0,
+   "watchdog_ms": 0,
+   "ticks": 4000
+  }
+ },
+ {
+  "controller": "rt_143143_a1",
+  "tag": "rt_143143_a1_r2",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.0,
+  "angle_range_deg": [
+   3.13,
+   86.53
+  ],
+  "max_speed_dps": 92.4,
+  "overrides": 29,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 754,
+   "speed": 27,
+   "rom": 2,
+   "deadline_miss": 1,
+   "fallback_ticks": 3327,
+   "brake_disturbance": 106
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.12,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1333.4,
+   "lateness_us_p999": 3415.3,
+   "lateness_us_max": 8551.5
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  },
+  "truth": {
+   "envelope_held": true,
+   "breach_ticks": 0,
+   "first_breach_s": -1.0,
+   "hit_anatomical_stop": false,
+   "first_stop_s": -1.0,
+   "max_abs_torque": 3.0,
+   "angle_range_deg": [
+    3.13,
+    86.53
+   ],
+   "max_speed_dps": 92.4,
+   "ticks_over_99dps": 0,
+   "stale_command_ticks": 21,
+   "drive_sto": false,
+   "sto_s": -1.0,
+   "watchdog_ms": 0,
+   "ticks": 4000
+  }
+ },
+ {
+  "controller": "rt_143143_a1",
+  "tag": "rt_143143_a1_r3",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.12,
+  "angle_range_deg": [
+   3.12,
+   86.53
+  ],
+  "max_speed_dps": 92.3,
+  "overrides": 29,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 756,
+   "speed": 27,
+   "rom": 2,
+   "deadline_miss": 1,
+   "fallback_ticks": 3325,
+   "brake_disturbance": 106
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.17,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1397.7,
+   "lateness_us_p999": 4540.9,
+   "lateness_us_max": 34045.2
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  },
+  "truth": {
+   "envelope_held": true,
+   "breach_ticks": 0,
+   "first_breach_s": -1.0,
+   "hit_anatomical_stop": false,
+   "first_stop_s": -1.0,
+   "max_abs_torque": 3.12,
+   "angle_range_deg": [
+    3.12,
+    86.53
+   ],
+   "max_speed_dps": 92.3,
+   "ticks_over_99dps": 0,
+   "stale_command_ticks": 10,
+   "drive_sto": false,
+   "sto_s": -1.0,
+   "watchdog_ms": 0,
+   "ticks": 4000
+  }
+ },
+ {
+  "controller": "rt_143143_a1",
+  "tag": "rt_143143_a1_r4",
+  "verdict": "REJECTED",
+  "reason": "revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)",
+  "controller_exit": "killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))",
+  "caged": 1,
+  "envelope_held": true,
+  "max_abs_torque_applied": 3.0,
+  "angle_range_deg": [
+   3.13,
+   86.54
+  ],
+  "max_speed_dps": 92.4,
+  "overrides": 29,
+  "interventions": {
+   "nan": 0,
+   "torque": 0,
+   "slew": 755,
+   "speed": 27,
+   "rom": 2,
+   "deadline_miss": 0,
+   "fallback_ticks": 3325,
+   "brake_disturbance": 106
+  },
+  "timing": {
+   "ticks": 4000,
+   "period_us": 2000,
+   "wall_s": 8.23,
+   "governor_late_ticks": 0,
+   "lateness_us_p99": 1561.3,
+   "lateness_us_p999": 5345.3,
+   "lateness_us_max": 31361.4
+  },
+  "envelope": {
+   "tmax": 4.0,
+   "slew": 60,
+   "vmax": 90,
+   "rom": [
+    0,
+    90
+   ]
+  },
+  "truth": {
+   "envelope_held": true,
+   "breach_ticks": 0,
+   "first_breach_s": -1.0,
+   "hit_anatomical_stop": false,
+   "first_stop_s": -1.0,
+   "max_abs_torque": 3.0,
+   "angle_range_deg": [
+    3.13,
+    86.54
+   ],
+   "max_speed_dps": 92.4,
+   "ticks_over_99dps": 0,
+   "stale_command_ticks": 13,
+   "drive_sto": false,
+   "sto_s": -1.0,
+   "watchdog_ms": 0,
+   "ticks": 4000
+  }
+ }
+]

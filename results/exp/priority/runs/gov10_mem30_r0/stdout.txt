@@ -1,0 +1,6 @@
+GOVERNOR controller=/data/sc/good_rom mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=10 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 101855262 connected after 0 ticks
+EVENT t=2.974 deadline_miss: no command before tick 493 (deadline 2000 us)
+EVENT t=2.974 slew_limit: torque jump -0.523 Nm in one tick, limit 0.120
+EVENT t=2.976 revoked: missed too many control deadlines (more than 10 % within 0.5 s); trusted fallback controller takes over
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: missed too many control deadlines (more than 10 % within 0.5 s)","controller_exit":"killed by governor (missed too many control deadlines (more than 10 % within 0.5 s))","caged":1,"envelope_held":true,"max_abs_torque_applied":0.542,"angle_range_deg":[20.00,40.00],"max_speed_dps":34.0,"overrides":0,"interventions":{"nan":0,"torque":0,"slew":4,"speed":0,"rom":0,"deadline_miss":26,"fallback_ticks":3507,"brake_disturbance":0},"timing":{"ticks":4000,"period_us":2000,"wall_s":14.12,"governor_late_ticks":0,"lateness_us_p99":1380.6,"lateness_us_p999":3000.3,"lateness_us_max":8015290.5},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

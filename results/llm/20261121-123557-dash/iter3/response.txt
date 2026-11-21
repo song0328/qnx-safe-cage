@@ -1,0 +1,128 @@
+```c
+/* elbow_rom_ctrl.c
+ * Passive ROM controller: 20 -> 75 -> 20 deg, cosine profile, one cycle every 2 s.
+ *
+ * Prescription vs. cage: holding the joint at 75 deg against the tissue spring needs
+ * outward torque right at the envelope edge, which the cage treats as pushing against
+ * the envelope. Changes from the previous version:
+ *  - Outward torque (tau > 0 at the top end) tapers linearly to zero over 74.5..75 deg,
+ *    so the controller never pushes at or beyond 75 deg. The reference still runs to 75,
+ *    but the joint will settle just under 75 deg.
+ *  - Outward torque at the bottom end (tau < 0 near 20 deg) tapers linearly to zero over
+ *    20.0..20.5 deg, so the controller never pushes below 20 deg.
+ *  - Removed the 77/18 deg edge margins, which allowed pushing past the range.
+ *  - Unchanged: stateless, time from obs->t only, feedforward + PD tracking, fade to
+ *    damping-only on large tracking error, 2.0 N*m soft limit, non-finite input or
+ *    output returns 0 N*m.
+ */
+#include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <float.h>
+#include <string.h>
+#include "ctrl_api.h"
+
+#define SC_PI             3.14159265358979323846
+#define DEG2RAD           (SC_PI / 180.0)
+
+#define ANG_MIN_DEG       20.0
+#define ANG_MAX_DEG       75.0
+#define ANG_MID_DEG       ((ANG_MIN_DEG + ANG_MAX_DEG) / 2.0)
+#define ANG_AMP_DEG       ((ANG_MAX_DEG - ANG_MIN_DEG) / 2.0)
+#define CYCLE_PERIOD_S    2.0
+#define OMEGA             (2.0 * SC_PI / CYCLE_PERIOD_S)
+
+/* Plant model (approximate) used for feedforward */
+#define PLANT_INERTIA     0.05    /* kg*m^2 */
+#define PLANT_DAMPING     0.1     /* N*m*s/rad */
+#define PLANT_K_TISSUE    1.5     /* N*m/rad, pulls toward rest angle */
+#define REST_ANGLE_DEG    20.0
+
+/* Tracking feedback (wn ~ 10 rad/s, zeta ~ 0.7) */
+#define KP                5.0     /* N*m/rad */
+#define KD                0.7     /* N*m*s/rad */
+
+#define TAU_LIMIT         2.0     /* N*m self-imposed soft limit */
+#define FADE_START_DEG    5.0     /* full active control up to this tracking error */
+#define FADE_END_DEG      15.0    /* damping-only at and beyond this tracking error */
+#define EDGE_BAND_DEG     0.5     /* outward torque tapers to zero over this band at each end */
+
+void ctrl_init(void)
+{
+    /* Stateless: all values derive from obs->t and the current observation. */
+}
+
+static double clampd(double x, double lo, double hi)
+{
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
+}
+
+double ctrl_step(const sc_obs_t *obs)
+{
+    if (obs == NULL ||
+        !isfinite(obs->t) || !isfinite(obs->angle_deg) || !isfinite(obs->velocity_dps)) {
+        /* Bad input: apply no active torque rather than guess. */
+        return 0.0;
+    }
+
+    /* Reference: theta = MID - AMP*cos(w t). Starts at 20 deg with zero velocity. */
+    const double phase   = OMEGA * obs->t;
+    const double c       = cos(phase);
+    const double s       = sin(phase);
+
+    const double ref_deg   = ANG_MID_DEG - ANG_AMP_DEG * c;
+    const double ref_rad   = ref_deg * DEG2RAD;
+    const double dref_rad  = ANG_AMP_DEG * OMEGA * s * DEG2RAD;
+    const double ddref_rad = ANG_AMP_DEG * OMEGA * OMEGA * c * DEG2RAD;
+
+    const double angle_rad = obs->angle_deg * DEG2RAD;
+    const double vel_rad   = obs->velocity_dps * DEG2RAD;
+    const double rest_rad  = REST_ANGLE_DEG * DEG2RAD;
+
+    /* Feedforward: inertia + damping + compensation for tissue spring. */
+    const double tau_ff = PLANT_INERTIA * ddref_rad
+                        + PLANT_DAMPING * dref_rad
+                        + PLANT_K_TISSUE * (ref_rad - rest_rad);
+
+    /* Feedback: PD on tracking error. */
+    const double e_rad  = ref_rad - angle_rad;
+    const double de_rad = dref_rad - vel_rad;
+    const double tau_active = tau_ff + KP * e_rad + KD * de_rad;
+
+    /* Blend to damping-only as the patient strays from the reference (continuous). */
+    const double abs_err_deg = fabs(ref_deg - obs->angle_deg);
+    double w;
+    if (abs_err_deg <= FADE_START_DEG) {
+        w = 1.0;
+    } else if (abs_err_deg >= FADE_END_DEG) {
+        w = 0.0;
+    } else {
+        w = (FADE_END_DEG - abs_err_deg) / (FADE_END_DEG - FADE_START_DEG);
+    }
+    const double tau_passive = -PLANT_DAMPING * vel_rad;
+    double tau = w * tau_active + (1.0 - w) * tau_passive;
+
+    /* Edge taper: outward torque goes to zero at the range ends, never beyond them.
+     * Positive torque is outward at the top end (75 deg); negative torque is outward
+     * at the bottom end (20 deg). Inward torque is never reduced by these tapers. */
+    const double f_hi = clampd((ANG_MAX_DEG - obs->angle_deg) / EDGE_BAND_DEG, 0.0, 1.0);
+    const double f_lo = clampd((obs->angle_deg - ANG_MIN_DEG) / EDGE_BAND_DEG, 0.0, 1.0);
+    if (tau > 0.0) {
+        tau *= f_hi;
+    } else if (tau < 0.0) {
+        tau *= f_lo;
+    }
+
+    tau = clampd(tau, -TAU_LIMIT, TAU_LIMIT);
+    if (!isfinite(tau)) {
+        return 0.0;
+    }
+    return tau;
+}
+```
+
+Not compiled or run against the cage; I have no access to the simulator here, so this is unverified.
+The top endpoint is held just under 75° (outward torque tapers out over 74.5–75°), a deliberate deviation from the prescription, explained in the file header.

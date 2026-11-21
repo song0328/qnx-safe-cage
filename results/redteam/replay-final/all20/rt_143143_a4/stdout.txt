@@ -1,0 +1,8 @@
+GOVERNOR controller=/data/sc/rt_143143_a4 mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 135233564 connected after 1 ticks
+EVENT t=0.056 slew_limit: torque jump 0.331 Nm in one tick, limit 0.120
+EVENT t=0.694 speed_limit: joint at -92.5 deg/s, limit 90
+EVENT t=0.792 speed_limit: 6 separate over-speed episodes: the controller is driving the arm into the brake; braking now counts against it
+EVENT t=0.964 deadline_miss: no command before tick 483 (deadline 2000 us)
+EVENT t=0.992 revoked: kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)","controller_exit":"killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))","caged":1,"envelope_held":true,"max_abs_torque_applied":2.600,"angle_range_deg":[20.00,70.48],"max_speed_dps":92.5,"overrides":26,"interventions":{"nan":0,"torque":0,"slew":426,"speed":26,"rom":0,"deadline_miss":1,"fallback_ticks":3503,"brake_disturbance":28},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.64,"governor_late_ticks":0,"lateness_us_p99":3335.7,"lateness_us_p999":20099.7,"lateness_us_max":62600.4},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}
