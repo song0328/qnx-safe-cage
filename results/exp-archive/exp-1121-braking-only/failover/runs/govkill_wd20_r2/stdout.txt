@@ -1,0 +1,4 @@
+GOVERNOR controller=/data/sc/good_rom mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 232783901 connected after 1 ticks
+EVENT t=0.994 deadline_miss: no command before tick 497 (deadline 2000 us)
+EVENT t=0.994 slew_limit: torque jump -0.890 Nm in one tick, limit 0.120

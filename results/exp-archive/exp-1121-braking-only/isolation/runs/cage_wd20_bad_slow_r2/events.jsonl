@@ -1,0 +1,4 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 190181404 connected after 0 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}
+{"t":0.0080,"kind":"deadline_miss","detail":"no command before tick 4 (deadline 2000 us)"}
+{"t":7.1340,"kind":"controller_died","detail":"CPU time budget exhausted [signal 30]"}

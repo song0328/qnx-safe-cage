@@ -1,0 +1,4 @@
+GOVERNOR controller=/data/sc/bad_tamper mode=single-process caged=0 uid=0 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller linked into the governor process (single-process mode)
+[tamper] safety limits FOUND AND RAISED
+SUMMARY {"verdict":"PASSED","reason":"","controller_exit":"still running at end of session","caged":0,"envelope_held":true,"max_abs_torque_applied":1.280,"angle_range_deg":[18.89,82.12],"max_speed_dps":132.6,"overrides":0,"interventions":{"nan":0,"torque":0,"slew":0,"speed":0,"rom":0,"deadline_miss":0,"fallback_ticks":0,"brake_disturbance":0},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.07,"governor_late_ticks":0,"lateness_us_p99":937.9,"lateness_us_p999":3063.2,"lateness_us_max":26545.4},"envelope":{"tmax":50.0,"slew":100000,"vmax":1000,"rom":[-200,300]}}

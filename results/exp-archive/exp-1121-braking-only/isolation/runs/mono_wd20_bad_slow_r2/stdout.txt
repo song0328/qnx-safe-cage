@@ -1,0 +1,6 @@
+GOVERNOR controller=/data/sc/bad_slow mode=single-process caged=0 uid=0 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller linked into the governor process (single-process mode)
+EVENT t=0.000 slew_limit: torque jump 1.000 Nm in one tick, limit 0.120
+EVENT t=0.110 speed_limit: joint at 90.7 deg/s, limit 90
+EVENT t=7.996 joint_finished: the joint ended the session
+SUMMARY {"verdict":"PASSED","reason":"","controller_exit":"still running at end of session","caged":0,"envelope_held":true,"max_abs_torque_applied":1.124,"angle_range_deg":[20.00,40.08],"max_speed_dps":90.7,"overrides":1,"interventions":{"nan":0,"torque":0,"slew":22,"speed":1,"rom":0,"deadline_miss":0,"fallback_ticks":0,"brake_disturbance":0},"timing":{"ticks":3999,"period_us":2000,"wall_s":14.59,"governor_late_ticks":0,"lateness_us_p99":3944.5,"lateness_us_p999":5974.4,"lateness_us_max":7121.8},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

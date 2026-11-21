@@ -1,0 +1,5 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 175648796 connected after 0 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 1.000 Nm in one tick, limit 0.120"}
+{"t":0.0100,"kind":"deadline_miss","detail":"no command before tick 5 (deadline 2000 us)"}
+{"t":0.1460,"kind":"speed_limit","detail":"joint at 90.0 deg/s, limit 90"}
+{"t":7.1180,"kind":"controller_died","detail":"CPU time budget exhausted [signal 30]"}

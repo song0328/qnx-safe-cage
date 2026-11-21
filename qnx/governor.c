@@ -440,7 +440,11 @@ int main(int argc, char **argv) {
            wall), not from the controller's own command, so it is not the controller's fault */
         /* (still true while the slew limit walks the torque back to the controller's command; the clamp
            itself always applies, only the blame changes) */
-        prev_fallback = !using_ctrl || (flags & (F_BRAKE | F_SPEED | F_ROM | F_NAN)) || (prev_fallback && (flags & F_SLEW));
+        /* F_SHAPE too: the soft speed zone scales the torque down, and the controller's next ordinary command
+           then looks like a jump. Before this, that clamp was blamed and a gentle 1 N*m controller was revoked
+           in 0.15 s (found in the 11/21 final rerun: every faulty controller was revoked for "overrides"
+           before its real fault happened). */
+        prev_fallback = !using_ctrl || (flags & (F_BRAKE | F_SPEED | F_ROM | F_NAN | F_SHAPE)) || (prev_fallback && (flags & F_SLEW));
         prev_flags = flags;
         ovr_win += ovr - ovr_ring[k % WIN_TICKS];
         ovr_ring[k % WIN_TICKS] = (unsigned char)ovr;

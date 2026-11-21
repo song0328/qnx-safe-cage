@@ -1,0 +1,5 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 235470876 connected after 1 ticks"}
+{"t":0.0000,"kind":"torque_limit","detail":"requested 220.00 Nm, limit 4.0 Nm"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 4.000 Nm in one tick, limit 0.120"}
+{"t":0.0500,"kind":"revoked","detail":"kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over"}
+{"t":0.0520,"kind":"speed_limit","detail":"joint at 92.7 deg/s, limit 90 (driven by the patient, braking)"}

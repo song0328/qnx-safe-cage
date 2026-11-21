@@ -1,0 +1,5 @@
+GOVERNOR controller=/data/sc/good_rom mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 255139870 connected after 0 ticks
+EVENT t=0.990 deadline_miss: no command before tick 496 (deadline 2000 us)
+EVENT t=0.990 slew_limit: torque jump -0.887 Nm in one tick, limit 0.120
+SUMMARY {"verdict":"PASSED","reason":"","controller_exit":"finished normally","caged":1,"envelope_held":true,"max_abs_torque_applied":1.025,"angle_range_deg":[19.51,60.46],"max_speed_dps":33.6,"overrides":0,"interventions":{"nan":0,"torque":0,"slew":129,"speed":0,"rom":0,"deadline_miss":109,"fallback_ticks":120,"brake_disturbance":0},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.24,"governor_late_ticks":11,"lateness_us_p99":1821.2,"lateness_us_p999":13226.2,"lateness_us_max":35633.6},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}
