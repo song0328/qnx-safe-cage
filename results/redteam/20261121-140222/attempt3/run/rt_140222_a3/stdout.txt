@@ -1,0 +1,7 @@
+GOVERNOR controller=/data/sc/rt_140222_a3 mode=cage caged=1 uid=1001 period=2000us T=8.0s prio=70 fixed_prio_channel=1 abilities=1 envelope: |tau|<=4.0Nm slew<=60Nm/s |v|<=90dps ROM=[0,90]deg
+EVENT t=0.000 connect: controller pid 297889820 connected after 0 ticks
+EVENT t=0.054 speed_limit: joint at -93.6 deg/s, limit 90
+EVENT t=0.056 slew_limit: torque jump -4.419 Nm in one tick, limit 0.120
+EVENT t=0.994 deadline_miss: no command before tick 499 (deadline 2000 us)
+EVENT t=2.120 revoked: kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over
+SUMMARY {"verdict":"REJECTED","reason":"revoked by governor: kept pushing against the safety envelope (too many overrides within 0.5 s)","controller_exit":"killed by governor (kept pushing against the safety envelope (too many overrides within 0.5 s))","caged":1,"envelope_held":true,"max_abs_torque_applied":4.000,"angle_range_deg":[2.37,82.40],"max_speed_dps":96.9,"overrides":47,"interventions":{"nan":0,"torque":0,"slew":971,"speed":47,"rom":0,"deadline_miss":1,"fallback_ticks":2938,"brake_disturbance":70},"timing":{"ticks":4000,"period_us":2000,"wall_s":8.07,"governor_late_ticks":0,"lateness_us_p99":931.4,"lateness_us_p999":2203.0,"lateness_us_max":25702.2},"envelope":{"tmax":4.0,"slew":60,"vmax":90,"rom":[0,90]}}

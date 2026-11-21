@@ -1,0 +1,1 @@
+D:\qnx-safe-cage>qcc -Vgcc_ntox86_64 -O2 -Wall -I"D:\qnx-safe-cage\qnx" -o "D:\qnx-safe-cage\build\x86_64\rt_140222_a2" "D:\qnx-safe-cage\qnx\ctrl_main.c" "D:\qnx-safe-cage\results\redteam\20261121-140222\attempt2\controller.c" -lm

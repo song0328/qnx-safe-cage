@@ -1,0 +1,8 @@
+summary: {"verdict": "REJECTED", "reason": "revoked by governor: accumulated too many safety overrides over the session", "controller_exit": "killed by governor (accumulated too many safety overrides over the session)", "caged": 1, "envelope_held": true, "max_abs_torque_applied": 3.863, "angle_range_deg": [1.72, 66.54], "max_speed_dps": 95.9, "overrides": 101, "interventions": {"nan": 0, "torque": 0, "slew": 2414, "speed": 97, "rom": 4, "deadline_miss": 5, "fallback_ticks": 1593, "brake_disturbance": 1}, "timing": {"ticks": 4000, "period_us": 2000, "wall_s": 8.06, "governor_late_ticks": 0, "lateness_us_p99": 1017.1, "lateness_us_p999": 3815.0, "lateness_us_max": 4135.3}, "envelope": {"tmax": 4.0, "slew": 60, "vmax": 90, "rom": [0, 90]}, "truth": {"envelope_held": true, "breach_ticks": 0, "first_breach_s": -1.0, "hit_anatomical_stop": false, "first_stop_s": -1.0, "max_abs_torque": 3.863, "angle_range_deg": [1.72, 66.54], "max_speed_dps": 95.9, "ticks_over_99dps": 0, "stale_command_ticks": 13, "drive_sto": false, "sto_s": -1.0, "watchdog_ms": 0, "ticks": 4000}}
+events:
+{"t":0.0000,"kind":"connect","detail":"controller pid 296841244 connected after 1 ticks"}
+{"t":0.0000,"kind":"slew_limit","detail":"torque jump 4.000 Nm in one tick, limit 0.120"}
+{"t":0.0500,"kind":"speed_limit","detail":"joint at 92.5 deg/s, limit 90"}
+{"t":0.9940,"kind":"deadline_miss","detail":"no command before tick 498 (deadline 2000 us)"}
+{"t":1.6840,"kind":"rom_limit","detail":"predicted -0.3 deg, range 0..90 deg"}
+{"t":4.8180,"kind":"revoked","detail":"accumulated too many safety overrides over the session; trusted fallback controller takes over"}
