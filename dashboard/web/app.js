@@ -55,19 +55,11 @@ function showView(name) {
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => showView(b.dataset.go));
-let chartPick = "angle";
-seg("chart-pick", (v) => {
-  chartPick = v;
-  document.querySelectorAll(".chart").forEach((c) => c.hidden = c.dataset.c !== v);
-  ["angle", "speed", "torque"].forEach((k) => $("legend-" + k).hidden = k !== v);
-  schedule();
-});
 function headline(text) { $("headline").textContent = text; }
 seg("speed", (v) => speed = parseFloat(v));
 document.querySelectorAll(".tab").forEach((t) => t.onclick = () => showTab(t.dataset.tab));
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
-  $("tab-log").hidden = name !== "log";
   $("tab-ai").hidden = name !== "ai";
   $("tab-rec").hidden = name !== "rec";
 }
@@ -131,7 +123,7 @@ function newSession(msg) {
   $("subtitle").textContent = msg.subtitle || "";
   $("verdict").hidden = true;
   $("cta").hidden = true;
-  $("chart-card").hidden = false;
+
   $("dock-live").classList.add("on");
   S.state = "";
   headline(msg.mode === "patient" ? "The approved controller is moving the arm"

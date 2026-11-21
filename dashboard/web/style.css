@@ -452,3 +452,53 @@ textarea:focus, select:focus { outline: 3px solid var(--accent-soft); border-col
   .hero-head h1 { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------------------------------------------------------------- session = the live dashboard (everything for one run at a glance) */
+.views { max-width: 1600px; }
+.view:not([data-view="session"]) { max-width: 1240px; margin: 0 auto; }
+.view[data-view="session"] .hero-head h1 { font-size: 32px; }
+.dash {
+  display: grid; gap: 18px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(300px, 0.85fr);
+  grid-template-areas: "joint now log" "charts charts log";
+}
+.dash .joint-card { grid-area: joint; }
+.dash .side { grid-area: now; }
+.dash .chart-card { grid-area: charts; margin-top: 0; padding: 16px 18px 12px; display: grid; gap: 6px; }
+.dash .log-card { grid-area: log; padding: 18px 0 0; min-height: 360px; }
+.log-card .card-h { padding: 0 18px; margin-bottom: 8px; }
+.log-card .card-h h2 { display: flex; align-items: center; gap: 6px; }
+.log-body { position: absolute; inset: 58px 0 0 0; overflow: auto; padding: 0 16px 16px; }  /* never grows the grid */
+.chart-card .chart { border-top: 1px solid var(--line); padding-top: 8px; }
+.chart-card .chart:first-child { border-top: 0; padding-top: 0; }
+.chart-card .c-h { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.chart-card .chart canvas { height: 118px; }
+.now { gap: 8px; }
+.now .metric { padding-top: 9px; padding-bottom: 9px; }
+.now .m-v { font-size: 26px; }
+/* verdict sits above the dashboard as one horizontal strip */
+.view[data-view="session"] .verdict { grid-template-columns: auto minmax(0, 1fr) auto; margin-bottom: 18px; padding: 16px 20px; }
+.view[data-view="session"] .v-stats { grid-column: auto; display: flex; gap: 8px; margin-top: 0; }
+.view[data-view="session"] .v-stats span { min-width: 92px; }
+@media (max-width: 1280px) {
+  .dash { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "joint now" "charts charts" "log log"; }
+  .log-body { position: static; max-height: 360px; }
+  .dash .log-card { min-height: 0; }
+  .view[data-view="session"] .verdict { grid-template-columns: auto minmax(0, 1fr); }
+  .view[data-view="session"] .v-stats { grid-column: 1 / -1; flex-wrap: wrap; }
+}
+@media (max-width: 800px) {
+  .dash { grid-template-columns: 1fr; grid-template-areas: "joint" "now" "charts" "log"; }
+}
+/* compact header row on the dashboard: sentence left, actions right */
+.view[data-view="session"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: end; }
+.view[data-view="session"] > * { grid-column: 1 / -1; }
+.view[data-view="session"] > .hero-head { grid-column: 1; margin-bottom: 18px; }
+.view[data-view="session"] > .cta { grid-column: 2; margin: 0 4px 20px; }
+.view[data-view="session"] .hero-head h1 { font-size: 29px; margin-top: 8px; }
+.view[data-view="session"] .lede { font-size: 14.5px; margin-top: 6px; }
+.view[data-view="session"] .cta .btn.big { height: 46px; font-size: 15px; padding: 0 20px; }
+.chart-card .chart canvas { height: 96px; }
+@media (max-width: 1000px) {
+  .view[data-view="session"] > .hero-head, .view[data-view="session"] > .cta { grid-column: 1 / -1; }
+}
