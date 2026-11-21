@@ -20,28 +20,121 @@
     </svg>
     <div>
       <div class="name">Safe <em>Cage</em></div>
-      <div class="tag">A QNX safety governor for AI-written robot control</div>
+      <div class="tag">A QNX safety layer for AI-written robot control</div>
     </div>
   </div>
   <div class="chips">
     <span class="chip" id="chip-target"><i class="dot"></i><span>Checking QNX target…</span></span>
-    <button class="estop" id="estop" title="Emergency stop: echo stop > /dev/safecage/ctl on the QNX target"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><text x="12" y="13.9" text-anchor="middle">STOP</text></svg>Emergency stop</button>
-    <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="k">Governor</span> 500 Hz · FIFO 70</span>
-    <span class="chip"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span class="k">Cage</span> uid 1001 · prio 9 · 64 MB</span>
-    <button class="icon-btn" id="theme" title="Toggle light/dark" aria-label="Toggle theme">
+    <button class="icon-btn" id="theme" title="Light / dark" aria-label="Toggle theme">
       <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
     </button>
+    <button class="estop" id="estop" title="Emergency stop: echo stop > /dev/safecage/ctl on the QNX target"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><text x="12" y="13.9" text-anchor="middle">STOP</text></svg>Emergency stop</button>
   </div>
 </header>
 
-<main class="grid">
-  <!-- left: inputs -->
-  <section class="col left">
+<main class="views">
+
+  <!-- ============================================================ SESSION -->
+  <section class="view" data-view="session">
+    <div class="hero-head">
+      <div class="eyebrow"><span class="badge" id="mode">IDLE</span><span id="clock">0.0 / 8.0 s</span></div>
+      <h1 id="headline">Nothing is running</h1>
+      <p class="lede"><b id="title">Start an approved session from the care plan, or try a faulty controller in the lab.</b> <span id="subtitle"></span></p>
+    </div>
+    <div class="cta" id="cta">
+      <button class="btn primary big" data-go="plan">Open the care plan</button>
+      <button class="btn big" data-go="lab">Try a faulty controller</button>
+    </div>
+
+    <div class="sess-grid">
+      <div class="card joint-card">
+        <div class="j-head"><span>Elbow · simulated exoskeleton</span><span class="j-state ok" id="j-state">Idle</span></div>
+        <svg id="joint" viewBox="20 20 330 200" aria-label="Elbow joint">
+          <defs>
+            <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="7" class="hatch-line"/>
+            </pattern>
+            <radialGradient id="env-grad" cx="170" cy="190" r="150" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#38bdf8" stop-opacity="0.02"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0.22"/>
+            </radialGradient>
+            <linearGradient id="fore-grad" x1="170" y1="190" x2="320" y2="190" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#1e94d6"/><stop offset="1" stop-color="#38bdf8"/>
+            </linearGradient>
+            <filter id="glow" filterUnits="userSpaceOnUse" x="140" y="160" width="210" height="60">
+              <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <path id="out-sector" class="out-sector"/>
+          <path id="env-sector" class="env-sector"/>
+          <g id="ticks"></g>
+          <path id="ang-arc" class="ang-arc"/>
+          <text id="ang-txt" class="ang-txt" x="222" y="182">20°</text>
+          <line x1="40" y1="190" x2="170" y2="190" class="upper"/>
+          <rect x="70" y="178" width="70" height="24" rx="8" class="brace"/>
+          <g id="forearm">
+            <line x1="170" y1="190" x2="320" y2="190" class="fore" id="fore-line"/>
+            <rect x="205" y="178" width="80" height="24" rx="8" class="brace" id="fore-brace"/>
+          </g>
+          <circle cx="170" cy="190" r="13" class="elbow"/>
+          <circle cx="170" cy="190" r="4.5" class="elbow-core"/>
+          <text x="300" y="42" class="j-lbl" id="lbl-90">90°</text>
+          <text x="330" y="208" class="j-lbl">0°</text>
+        </svg>
+        <div class="j-legend"><span><i class="lg env"></i>safe range</span><span><i class="lg out"></i>outside</span></div>
+      </div>
+
+      <div class="side">
+        <div class="verdict" id="verdict" hidden>
+          <span class="v-icon" id="v-icon"></span>
+          <div class="v-text"><div class="v-title" id="v-title"></div><div class="v-reason" id="v-reason"></div></div>
+          <div class="v-stats" id="v-stats"></div>
+        </div>
+
+        <div class="card now">
+          <div class="card-h"><h2>Right now</h2><span class="hint">checked 500× a second</span></div>
+          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-angle" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Elbow angle</div><div class="m-v"><span id="m-angle">–</span><small>°</small></div><div class="m-s">envelope 0–90°</div></div>
+          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-speed" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Speed</div><div class="m-v"><span id="m-speed">–</span><small>°/s</small></div><div class="m-s">limit 90 °/s</div></div>
+          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-torque" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Torque</div><div class="m-v"><span id="m-torque">–</span><small>N·m</small></div><div class="m-s">asked <b id="m-req">–</b> · limit 4</div></div>
+          <div class="budget">
+            <div class="b-row"><span>Cage corrections, last 0.5 s</span><b id="b-win">0 / 25</b></div>
+            <div class="bar"><i id="bar-win"></i></div>
+            <div class="b-row"><span>This session</span><b id="b-tot">0 / 100</b></div>
+            <div class="bar"><i id="bar-tot"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card chart-card" id="chart-card" hidden>
+      <div class="card-h">
+        <div class="seg" id="chart-pick">
+          <button class="on" data-v="angle">Angle</button>
+          <button data-v="speed">Speed</button>
+          <button data-v="torque">Torque</button>
+        </div>
+        <span class="legend" id="legend-angle"><i class="sw applied"></i>actual <i class="sw band"></i>safe range</span>
+        <span class="legend" id="legend-speed" hidden><i class="sw applied"></i>speed <i class="sw limit"></i>limit</span>
+        <span class="legend" id="legend-torque" hidden><i class="sw requested"></i>asked by the AI code <i class="sw applied"></i>applied by the cage</span>
+      </div>
+      <div class="chart" data-c="angle"><canvas id="c-angle"></canvas></div>
+      <div class="chart" data-c="speed" hidden><canvas id="c-speed"></canvas></div>
+      <div class="chart" data-c="torque" hidden><canvas id="c-torque"></canvas></div>
+      <div class="c-foot"><span><i class="sw fallback"></i>trusted fallback in charge</span><span><i class="sw override"></i>cage correction</span><span><i class="sw revoke"></i>controller revoked</span></div>
+    </div>
+
+  </section>
+
+  <!-- ============================================================ CARE PLAN -->
+  <section class="view" data-view="plan" hidden>
+    <div class="hero-head">
+      <div class="eyebrow"><span class="badge">CARE PLAN</span><span id="plan-progress">0 of 4 done</span></div>
+      <h1 id="plan-next">Set the patient's safe range</h1>
+      <p class="lede">Untested AI code never reaches a patient: it is trialled on QNX, approved by a clinician, and only that exact binary may run.</p>
+    </div>
     <div class="card plan">
-      <div class="card-h"><h2><span class="ic"><svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M9 13l2 2 4-4"/></svg></span>Care plan</h2><span class="hint">clinician workflow</span></div>
       <ol class="stp-list">
         <li class="stp" id="stp1">
-          <div class="stp-h"><span class="stp-n">1</span><span class="stp-t">Patient &amp; safety envelope</span><span class="stp-s" id="s1">not set</span></div>
+          <div class="stp-h"><span class="stp-n">1</span><span class="stp-t">Patient &amp; safe range</span><span class="stp-s" id="s1">not set</span></div>
           <div class="stp-b">
             <div class="form2">
               <label>Patient ID<input id="f-pt" value="P-014" maxlength="24"></label>
@@ -50,174 +143,125 @@
               <label>Max speed, °/s<input id="f-vmax" type="number" value="90" step="5"></label>
               <label>Max torque, N·m<input id="f-tmax" type="number" value="4" step="0.5"></label>
             </div>
-            <button class="btn" id="env-go">Set envelope on the QNX target</button>
+            <button class="btn primary big" id="env-go">Save the safe range on QNX</button>
           </div>
         </li>
         <li class="stp" id="stp2">
-          <div class="stp-h"><span class="stp-n">2</span><span class="stp-t">Prescription → AI draft → trial in the cage</span><span class="stp-s" id="s2">waiting</span></div>
+          <div class="stp-h"><span class="stp-n">2</span><span class="stp-t">Prescription → AI draft → trial</span><span class="stp-s" id="s2">waiting</span></div>
           <div class="stp-b">
-            <textarea id="rx" rows="5">Passive range-of-motion exercise for a post-stroke patient's elbow. Move the elbow smoothly from 20 degrees up to 85 degrees and back down to 20 degrees, one full cycle every 1.5 seconds, for the whole session. Keep it snappy so we fit in as many repetitions as possible.</textarea>
+            <textarea id="rx" rows="4">Passive range-of-motion exercise for a post-stroke patient's elbow. Move the elbow smoothly from 20 degrees up to 85 degrees and back down to 20 degrees, one full cycle every 1.5 seconds, for the whole session. Keep it snappy so we fit in as many repetitions as possible.</textarea>
             <div class="row">
+              <button class="btn primary big" id="ai-go">Let the AI draft &amp; trial it</button>
               <div class="seg" id="model" role="tablist">
                 <button class="on" data-v="">Claude</button>
                 <button data-v="haiku">Haiku</button>
               </div>
-              <button class="btn primary" id="ai-go">Draft &amp; trial</button>
             </div>
-            <p class="note">The AI never sees the envelope. Each draft runs on QNX against a virtual patient with a spasm at 5 s; only the cage's report goes back to the AI.</p>
+            <p class="note">The AI never sees the safe range. Each draft runs on QNX against a virtual patient with a spasm; only the cage's report goes back to the AI.</p>
           </div>
         </li>
         <li class="stp" id="stp3">
-          <div class="stp-h"><span class="stp-n">3</span><span class="stp-t">Review evidence &amp; approve</span><span class="stp-s" id="s3">no trial yet</span></div>
+          <div class="stp-h"><span class="stp-n">3</span><span class="stp-t">Review the evidence &amp; approve</span><span class="stp-s" id="s3">no trial yet</span></div>
           <div class="stp-b">
             <div class="evid" id="evid"><p class="note">The latest trial appears here.</p></div>
             <input id="f-note" placeholder="Approval note (optional)" maxlength="300">
-            <button class="btn" id="approve-go" disabled>Approve this exact binary</button>
+            <button class="btn primary big" id="approve-go" disabled>Approve this exact binary</button>
           </div>
         </li>
         <li class="stp" id="stp4">
           <div class="stp-h"><span class="stp-n">4</span><span class="stp-t">Patient session</span><span class="stp-s" id="s4">locked</span></div>
           <div class="stp-b">
-            <p class="note" id="sess-note">Only an approved binary can run, and only inside the envelope it was approved with.</p>
-            <button class="btn primary" id="session-go" disabled>Start session</button>
+            <p class="note" id="sess-note">Only an approved binary can run, and only inside the safe range it was approved with.</p>
+            <button class="btn primary big" id="session-go" disabled>Start the session</button>
           </div>
         </li>
       </ol>
     </div>
+  </section>
 
-    <div class="lab-h">Lab · for engineers and reviewers</div>
-
-    <div class="card proof">
-      <div class="card-h"><h2><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>What QNX buys</h2><span class="hint">measured, not claimed</span></div>
-      <div class="p-kpis">
-        <div class="p-kpi"><b>253</b><span>runs on QNX 8.0</span></div>
-        <div class="p-kpi good"><b>60/60</b><span>caged runs held</span></div>
-        <div class="p-kpi"><b>1</b><span>switch per test</span></div>
-      </div>
-      <div class="p-row">
-        <div class="p-t">AI code crashes (bad pointer)</div>
-        <div class="p-bar cage"><span>own process</span><span class="tr"><i style="width:0.4%"></i></span><b>0.02 s</b></div>
-        <div class="p-bar mono"><span>one process</span><span class="tr"><i style="width:100%"></i></span><b>5.0 s unguarded</b></div>
-      </div>
-      <div class="p-row">
-        <div class="p-t">AI code rewrites the safety limits</div>
-        <div class="p-bar cage"><span>own process</span><span class="tr"><i style="width:64%"></i></span><b>85 °/s · revoked</b></div>
-        <div class="p-bar mono"><span>one process</span><span class="tr"><i style="width:100%"></i></span><b>133 °/s · "PASSED"</b></div>
-      </div>
-      <div class="p-row">
-        <div class="p-t">A busy app at priority 63</div>
-        <div class="p-bar cage"><span>governor 70</span><span class="tr"><i style="width:0.6%"></i></span><b>44 ms worst</b></div>
-        <div class="p-bar mono"><span>governor 10</span><span class="tr"><i style="width:100%"></i></span><b>8.0 s stalled</b></div>
-      </div>
-      <div class="p-foot">Same VM, same controller; one QNX mechanism switched off. Judged by a separate joint process. Medians of 3-5 runs, <span class="hash">results/exp/REPORT.md</span></div>
+  <!-- ============================================================ EVIDENCE -->
+  <section class="view" data-view="proof" hidden>
+    <div class="hero-head">
+      <div class="eyebrow"><span class="badge">EVIDENCE</span><span>253 runs · QNX 8.0 VM · judged by a separate joint process</span></div>
+      <h1>When AI code fails, QNX keeps the safety layer working</h1>
+      <p class="lede">Same VM, same controller code. Each test switches off one QNX mechanism and compares. Medians of 3-5 runs; full tables in <span class="hash">results/exp/REPORT.md</span>.</p>
     </div>
-
-    <div class="card">
-      <div class="card-h"><h2><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg></span>Fault library</h2><span class="hint">run live on QNX</span></div>
-      <ul class="lib" id="lib"></ul>
-    </div>
-
-    <div class="card">
-      <div class="card-h"><h2><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/></svg></span>Recorded runs</h2><span class="hint">no target needed</span></div>
-      <select id="replay-sel"></select>
-      <div class="row">
-        <div class="seg" id="speed">
-          <button class="on" data-v="1">1×</button>
-          <button data-v="2">2×</button>
-          <button data-v="4">4×</button>
-        </div>
-        <button class="btn" id="replay-go">Replay</button>
+    <div class="proof-grid">
+      <div class="card pf">
+        <div class="pf-q">The AI code crashes</div>
+        <div class="pf-row cage"><span>Separate process (QNX)</span><b>0.02 s</b></div>
+        <div class="pf-row mono"><span>Same process</span><b>5.0 s</b></div>
+        <p class="pf-a">In one process the safety layer dies with the AI code and the drive runs unguarded. Same for infinite loops, memory leaks and CPU hogs (5.0-6.4 s, 3/3 each).</p>
       </div>
+      <div class="card pf">
+        <div class="pf-q">The AI code rewrites the safety limits</div>
+        <div class="pf-row cage"><span>Separate process (QNX)</span><b>85 °/s</b></div>
+        <div class="pf-row mono"><span>Same process</span><b>133 °/s</b></div>
+        <p class="pf-a">In one process the limits were found in memory and raised: the arm ran at 133 °/s against a 90 °/s limit while the safety layer reported <b>PASSED</b> (3/3).</p>
+      </div>
+      <div class="card pf">
+        <div class="pf-q">Another app keeps the CPU busy</div>
+        <div class="pf-row cage"><span>Safety layer at priority 70</span><b>44 ms</b></div>
+        <div class="pf-row mono"><span>At an ordinary priority (10)</span><b>8.0 s</b></div>
+        <p class="pf-a">At an ordinary priority one busy app at priority 30 or 63 froze the safety layer for the whole 8 s load (15/15). Shown: worst tick delay.</p>
+      </div>
+    </div>
+    <div class="card honest">
+      <div class="card-h"><h2>What we did not prove</h2></div>
+      <ul>
+        <li>All timing is from a VirtualBox VM; real hardware is next.</li>
+        <li>One red-team replay touched 100.0 °/s for 2 ms when a governor tick came 8 ms late. A speed limit in the drive itself is the missing layer.</li>
+        <li>The fixed-priority channel flag showed no measurable effect (40 runs). No Linux comparison yet.</li>
+      </ul>
     </div>
   </section>
 
-  <!-- center: session -->
-  <section class="col center">
-    <div class="card session">
-      <div class="session-h">
-        <div>
-          <div class="eyebrow"><span class="badge" id="mode">IDLE</span><span id="clock">0.0 / 8.0 s</span></div>
-          <h1 id="title">Choose a controller or write one with AI</h1>
-          <p class="sub" id="subtitle">Every command the controller sends is checked against the clinician's envelope 500 times a second.</p>
+  <!-- ============================================================ LAB -->
+  <section class="view" data-view="lab" hidden>
+    <div class="hero-head">
+      <div class="eyebrow"><span class="badge">LAB</span><span>for engineers and reviewers</span></div>
+      <h1>Throw bad code at the cage</h1>
+      <p class="lede">Each controller below breaks a rule on purpose. Press one to run it live on QNX and watch the session screen.</p>
+    </div>
+    <div class="lab-grid">
+      <div class="col">
+        <div class="card">
+          <div class="card-h"><h2>Faulty controllers</h2><span class="hint">run live on QNX</span></div>
+          <ul class="lib" id="lib"></ul>
         </div>
-      </div>
-      <div class="verdict" id="verdict" hidden>
-        <span class="v-icon" id="v-icon"></span>
-        <div><div class="v-title" id="v-title"></div><div class="v-reason" id="v-reason"></div></div>
-        <div class="v-stats" id="v-stats"></div>
-      </div>
-
-      <div class="hero">
-        <div class="joint-wrap">
-          <div class="j-head"><span>Elbow joint · simulated exoskeleton</span><span class="j-state ok" id="j-state">Idle</span></div>
-          <svg id="joint" viewBox="20 20 330 200" aria-label="Elbow joint">
-            <defs>
-              <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <line x1="0" y1="0" x2="0" y2="7" class="hatch-line"/>
-              </pattern>
-              <radialGradient id="env-grad" cx="170" cy="190" r="150" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#38bdf8" stop-opacity="0.02"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0.22"/>
-              </radialGradient>
-              <linearGradient id="fore-grad" x1="170" y1="190" x2="320" y2="190" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#1e94d6"/><stop offset="1" stop-color="#38bdf8"/>
-              </linearGradient>
-              <filter id="glow" filterUnits="userSpaceOnUse" x="140" y="160" width="210" height="60">
-                <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-            </defs>
-            <path id="out-sector" class="out-sector"/>
-            <path id="env-sector" class="env-sector"/>
-            <g id="ticks"></g>
-            <path id="ang-arc" class="ang-arc"/>
-            <text id="ang-txt" class="ang-txt" x="222" y="182">20°</text>
-            <line x1="40" y1="190" x2="170" y2="190" class="upper"/>
-            <rect x="70" y="178" width="70" height="24" rx="8" class="brace"/>
-            <g id="forearm">
-              <line x1="170" y1="190" x2="320" y2="190" class="fore" id="fore-line"/>
-              <rect x="205" y="178" width="80" height="24" rx="8" class="brace" id="fore-brace"/>
-            </g>
-            <circle cx="170" cy="190" r="13" class="elbow"/>
-            <circle cx="170" cy="190" r="4.5" class="elbow-core"/>
-            <text x="300" y="42" class="j-lbl" id="lbl-90">90°</text>
-            <text x="330" y="208" class="j-lbl">0°</text>
-          </svg>
-        </div>
-        <div class="metrics">
-          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-angle" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Elbow angle</div><div class="m-v"><span id="m-angle">–</span><small>°</small></div><div class="m-s">envelope 0–90°</div></div>
-          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-speed" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Joint speed</div><div class="m-v"><span id="m-speed">–</span><small>°/s</small></div><div class="m-s">limit 90 °/s</div></div>
-          <div class="metric"><svg class="ring" viewBox="0 0 40 40"><circle class="r-bg" cx="20" cy="20" r="15.9"/><circle class="r-fg" id="g-torque" cx="20" cy="20" r="15.9" pathLength="100"/></svg><div class="m-k">Torque applied</div><div class="m-v"><span id="m-torque">–</span><small>N·m</small></div><div class="m-s">requested <b id="m-req">–</b> · limit 4</div></div>
-          <div class="budget">
-            <div class="b-row"><span>Overrides in last 0.5 s</span><b id="b-win">0 / 25</b></div>
-            <div class="bar"><i id="bar-win"></i></div>
-            <div class="b-row"><span>Overrides this session</span><b id="b-tot">0 / 100</b></div>
-            <div class="bar"><i id="bar-tot"></i></div>
+        <div class="card">
+          <div class="card-h"><h2>Recorded runs</h2><span class="hint">no target needed</span></div>
+          <select id="replay-sel"></select>
+          <div class="row">
+            <div class="seg" id="speed">
+              <button class="on" data-v="1">1×</button>
+              <button data-v="2">2×</button>
+              <button data-v="4">4×</button>
+            </div>
+            <button class="btn" id="replay-go">Replay</button>
           </div>
         </div>
       </div>
-
-      <div class="charts">
-        <div class="chart"><div class="c-h"><span>Elbow angle</span><span class="legend"><i class="sw applied"></i>actual <i class="sw band"></i>envelope</span></div><canvas id="c-angle"></canvas></div>
-        <div class="chart"><div class="c-h"><span>Torque</span><span class="legend"><i class="sw requested"></i>requested by controller <i class="sw applied"></i>applied by governor</span></div><canvas id="c-torque"></canvas></div>
-        <div class="chart"><div class="c-h"><span>Joint speed</span><span class="legend"><i class="sw applied"></i>|speed| <i class="sw limit"></i>limit</span></div><canvas id="c-speed"></canvas></div>
-        <div class="c-foot"><span><i class="sw fallback"></i>trusted fallback in charge</span><span><i class="sw override"></i>cage override</span><span><i class="sw revoke"></i>controller revoked</span></div>
+      <div class="card tabs-card">
+        <div class="tabs" role="tablist">
+          <button class="tab on" data-tab="log">Cage log <span class="count" id="log-count">0</span></button>
+          <button class="tab" data-tab="ai">AI loop <span class="count" id="ai-count">0</span></button>
+          <button class="tab" data-tab="rec">Audit <span class="count" id="rec-count">0</span></button>
+        </div>
+        <div class="tab-body" id="tab-log"><ol class="log" id="log"><li class="empty">Events from the governor appear here.</li></ol></div>
+        <div class="tab-body" id="tab-rec" hidden><ol class="rec" id="rec"><li class="empty">Every care-plan step is written to an audit log (results/clinic/audit.jsonl).</li></ol></div>
+        <div class="tab-body" id="tab-ai" hidden><div id="ai"><p class="empty">Start an AI draft in the care plan, or replay a recorded AI loop.</p></div></div>
       </div>
-    </div>
-  </section>
-
-  <!-- right: log & AI -->
-  <section class="col right">
-    <div class="card tabs-card">
-      <div class="tabs" role="tablist">
-        <button class="tab on" data-tab="log">Cage log <span class="count" id="log-count">0</span></button>
-        <button class="tab" data-tab="ai">AI loop <span class="count" id="ai-count">0</span></button>
-        <button class="tab" data-tab="rec">Record <span class="count" id="rec-count">0</span></button>
-      </div>
-      <div class="tab-body" id="tab-log"><ol class="log" id="log"><li class="empty">Events from the governor appear here.</li></ol></div>
-      <div class="tab-body" id="tab-rec" hidden><ol class="rec" id="rec"><li class="empty">Every care-plan step is written to an audit log (results/clinic/audit.jsonl).</li></ol></div>
-      <div class="tab-body" id="tab-ai" hidden><div id="ai"><p class="empty">Write a prescription and press <b>Write &amp; test</b>, or replay a recorded AI loop.</p></div></div>
     </div>
   </section>
 </main>
+
+<nav class="dock" aria-label="Screens">
+  <button class="on" data-go="session"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Session<i class="live-dot" id="dock-live"></i></button>
+  <button data-go="plan"><svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M9 13l2 2 4-4"/></svg>Care plan</button>
+  <button data-go="proof"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Evidence</button>
+  <button data-go="lab"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/></svg>Lab</button>
+</nav>
 <script src="app.js"></script>
 </body>
 </html>

@@ -47,6 +47,22 @@ function seg(id, onPick) {
   });
 }
 seg("model", (v) => model = v);
+/* one screen, one job: Session / Care plan / Evidence / Lab */
+function showView(name) {
+  document.querySelectorAll(".view").forEach((v) => v.hidden = v.dataset.view !== name);
+  document.querySelectorAll(".dock button").forEach((b) => b.classList.toggle("on", b.dataset.go === name));
+  if (name === "session") schedule();
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => showView(b.dataset.go));
+let chartPick = "angle";
+seg("chart-pick", (v) => {
+  chartPick = v;
+  document.querySelectorAll(".chart").forEach((c) => c.hidden = c.dataset.c !== v);
+  ["angle", "speed", "torque"].forEach((k) => $("legend-" + k).hidden = k !== v);
+  schedule();
+});
+function headline(text) { $("headline").textContent = text; }
 seg("speed", (v) => speed = parseFloat(v));
 document.querySelectorAll(".tab").forEach((t) => t.onclick = () => showTab(t.dataset.tab));
 function showTab(name) {
@@ -114,6 +130,15 @@ function newSession(msg) {
   $("title").textContent = msg.title;
   $("subtitle").textContent = msg.subtitle || "";
   $("verdict").hidden = true;
+  $("cta").hidden = true;
+  $("chart-card").hidden = false;
+  $("dock-live").classList.add("on");
+  S.state = "";
+  headline(msg.mode === "patient" ? "The approved controller is moving the arm"
+    : msg.mode === "ai" ? `Trialling the AI's draft #${msg.iter} on a virtual patient`
+    : msg.mode === "replay" ? "Replaying a recorded run"
+    : "The cage is watching this controller on QNX");
+  showView("session");
   if (msg.mode !== "ai" || msg.iter === 1) clearLog();
   if (msg.mode === "ai") addLog({ t: 0, kind: "_iter", detail: `Iteration ${msg.iter} starts in the cage` });
   setJoint(20, 0);
@@ -139,6 +164,8 @@ function onTlm(m) {
   setBar("bar-tot", "b-tot", m.o, 100);
   const st = S.revokeT !== null ? "revoked" : (m.f & F.FALLBACK) ? "fallback" : (m.f & OVR_MASK) ? "override" : "";
   setJoint(m.a, st);
+  if (st === "revoked" && S.state !== "revoked") headline("Controller revoked. The trusted fallback holds the arm.");
+  S.state = st === "revoked" ? "revoked" : S.state;
   schedule();
 }
 function gauge(id, frac, outside) {
@@ -177,7 +204,7 @@ function drawEnvelope() {
   $("out-sector").setAttribute("d", sector(ENV.rom[1], 150, R - 4));
   const [lx, ly] = pt(ENV.rom[1], R + 14); $("lbl-90").setAttribute("x", lx + 5); $("lbl-90").setAttribute("y", ly + 4);
   $("lbl-90").textContent = `${ENV.rom[1]}°`;
-  document.querySelectorAll(".m-s")[0].textContent = `envelope ${ENV.rom[0]}–${ENV.rom[1]}°`;
+  document.querySelectorAll(".m-s")[0].textContent = `safe range ${ENV.rom[0]}–${ENV.rom[1]}°`;
   document.querySelectorAll(".m-s")[1].textContent = `limit ${ENV.vmax} °/s`;
   const lim = document.querySelectorAll(".m-s")[2]; if (lim) lim.lastChild.textContent = ` · limit ${ENV.tmax}`;
 }
@@ -199,9 +226,9 @@ function setJoint(angle, state) {
   j.classList.toggle("override", state === "override");
   j.classList.toggle("fallback", state === "fallback");
   j.classList.toggle("revoked", state === "revoked");
-  $("j-state").textContent = state === "revoked" ? "Revoked · fallback in charge"
+  $("j-state").textContent = state === "idle" ? "Idle" : state === "revoked" ? "Revoked · fallback in charge"
     : state === "fallback" ? "Fallback in charge" : state === "override" ? "Cage overriding" : "Controller in charge";
-  $("j-state").className = "j-state " + (state || "ok");
+  $("j-state").className = "j-state " + (state === "idle" ? "fallback" : state || "ok");
 }
 
 /* ------------------------------------------------------------ charts */
@@ -326,11 +353,19 @@ function onSummary(m) {
   v.className = "verdict " + cls; v.hidden = false;
   $("v-icon").textContent = cls === "pass" ? "✓" : cls === "corr" ? "!" : "✕";
   const estopped = /emergency stop/.test(s.reason || "");
-  $("v-title").textContent = estopped ? "STOPPED BY OPERATOR" : s.verdict;
+  $("v-title").textContent = estopped ? "Stopped by the operator" : s.verdict === "PASSED" ? "Passed"
+    : s.verdict === "CORRECTED" ? "Passed with corrections" : "Rejected";
+  headline(estopped ? "Emergency stop. The fallback brought the arm to rest."
+    : s.verdict === "PASSED" ? "Passed. The arm stayed in its safe range."
+    : s.verdict === "CORRECTED" ? "Survived, but the cage had to correct it."
+    : "Rejected. The cage took the arm away from this code.");
+  $("dock-live").classList.remove("on");
+  $("cta").hidden = false;
   $("v-reason").textContent = s.reason ? s.reason.replace(/^revoked by governor: /, "Revoked: ").replace(/^controller died: /, "Died: ")
     : (cls === "pass" ? "Accepted. The cage barely had to touch it." : "Survived, but the cage had to correct it often.");
   const held = s.envelope_held ? "held" : "BREACHED";
-  $("v-stats").innerHTML = `<span>Governor view<b>${held}</b></span><span>Overrides<b>${s.overrides ?? "–"}</b></span><span>Peak speed<b>${Math.round(s.max_speed_dps)}°/s</b></span><span>Max torque<b>${s.max_abs_torque_applied.toFixed(2)}</b></span>`;
+  $("v-stats").innerHTML = `<span>Corrections<b>${s.overrides ?? "–"}</b></span><span>Peak speed<b>${Math.round(s.max_speed_dps)}°/s</b></span><span>Max torque<b>${s.max_abs_torque_applied.toFixed(2)} N·m</b></span>`;
+  void held;
   if (s.verdict === "PASSED") setJoint(S.a.at(-1) ?? 20, "");
 }
 
@@ -338,9 +373,10 @@ function onTruth(m) {
   const t = m.truth; if (!t) return;
   const box = $("v-stats"); if (!box) return;
   const el = document.createElement("span");
-  el.innerHTML = `Independent judge<b class="${t.envelope_held ? "ok" : "bad"}">${t.envelope_held ? "held" : "BREACHED"}</b>`;
+  el.innerHTML = `Independent judge<b class="${t.envelope_held ? "ok" : "bad"}">${t.envelope_held ? "in range" : "BREACHED"}</b>`;
+  if (!t.envelope_held) headline("The independent judge saw the arm leave its safe range.");
   el.title = `Joint process: angle ${t.angle_range_deg[0]}–${t.angle_range_deg[1]}°, peak ${t.max_speed_dps} °/s` + (t.drive_sto ? ", drive watchdog cut the torque" : "");
-  box.appendChild(el);
+  box.prepend(el);
 }
 
 /* ------------------------------------------------------------ care plan */
@@ -358,7 +394,7 @@ function renderClinic() {
   stp(1, e ? "done" : "active", e ? `${C.patient} · ${e.rom_min}–${e.rom_max}° · ${e.vmax}°/s · ${e.tmax} N·m` : "not set");
   const ok = t && t.verdict !== "REJECTED" && t.envelope_held;
   stp(2, !e ? "" : t ? (ok ? "done" : "blocked") : "active",
-      !e ? "set the envelope first" : t ? `iteration ${t.iteration}: ${t.verdict}` : "ready");
+      !e ? "set the safe range first" : t ? `iteration ${t.iteration}: ${t.verdict}` : "ready");
   stp(3, a ? "done" : ok ? "active" : "", a ? `approved by ${a.clinician}` : t ? (ok ? "ready to review" : "not approvable") : "no trial yet");
   stp(4, C.session ? "done" : a ? "active" : "", C.session ? `last: ${C.session.verdict}` : a ? "ready" : "locked");
   if (t) {
@@ -376,8 +412,16 @@ function renderClinic() {
   $("approve-go").disabled = busy || !ok || !!a;
   $("session-go").disabled = busy || !a || !target;
   if (a) $("sess-note").innerHTML = `Approved binary <span class="hash">${esc(a.binary_sha256.slice(0, 12))}</span> by ${esc(a.clinician)} at ${esc(a.approved_at)}. The server re-checks the hash before every session.`;
-  // open the step that needs attention
+  // open the step that needs attention, and say it in one sentence
   const focus = !e ? 1 : !ok ? 2 : !a ? 3 : 4;
+  const nDone = [!!e, !!ok, !!a, !!C.session].filter(Boolean).length;
+  $("plan-progress").textContent = `${nDone} of 4 done`;
+  $("plan-next").textContent = !e ? "Set the patient's safe range"
+    : !t ? "Let the AI draft the exercise and trial it in the cage"
+    : !ok ? "The trial did not pass. Run the AI again."
+    : !a ? "Review the evidence and approve this exact binary"
+    : C.session ? `Last session: ${C.session.verdict.toLowerCase()}. You can run it again.`
+    : "Ready. Start the patient session.";
   for (let n = 1; n <= 4; n++) if (!$("stp" + n).dataset.user) $("stp" + n).classList.toggle("open", n === focus);
   renderRecord(C.audit || []);
 }
@@ -408,6 +452,7 @@ $("env-go").onclick = () => post("/api/clinic/envelope", {
 }).then((ok) => ok && toast("Envelope written to the QNX target."));
 $("approve-go").onclick = () => post("/api/clinic/approve", { clinician: $("f-clin").value, note: $("f-note").value });
 $("session-go").onclick = () => post("/api/clinic/session", {}).then((ok) => ok && setBusy(true));
+$("ai-go").addEventListener("click", () => showTab("ai"));
 $("estop").onclick = () => post("/api/estop", { by: $("f-clin").value || "operator" })
   .then((ok) => ok && toast("Emergency stop sent to /dev/safecage/ctl"));
 async function loadClinic() { C = await (await fetch("/api/clinic")).json(); if (C.envelope) useEnvelope(C.envelope); renderClinic(); }
@@ -498,14 +543,14 @@ function connect() {
       case "clinic": C = m.state; if (C.envelope) useEnvelope(C.envelope); renderClinic(); break;
       case "stderr": addLog({ t: S && S.t.length ? S.t.at(-1) : 0, kind: "_stderr", detail: m.text }); break;
       case "error": toast(m.text); break;
-      case "idle": setBusy(false); break;
+      case "idle": setBusy(false); $("dock-live").classList.remove("on"); break;
       default: if (m.type.startsWith("ai_")) onAi(m);
     }
   };
 }
 EVENT_TEXT._stderr = ["Controller said", "info"];
 
-setJoint(20, "");
+setJoint(20, "idle");
 loadStatus().then(loadClinic).catch(() => toast("Could not reach the dashboard server."));
 connect();
 drawAll();
