@@ -40,3 +40,7 @@ Claude generated and revised exercise controllers from prescriptions and trial f
 ## Built with
 
 QNX 8.0, QNX SDP 8.0, C, Python, VirtualBox, Claude Code, HTML/CSS/JavaScript.
+## Links
+
+- [Public source repository](https://github.com/song0328/qnx-safe-cage)
+- [Public demonstration video](https://youtu.be/P3JAFVaphAA)
