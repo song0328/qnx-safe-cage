@@ -328,3 +328,6 @@ textarea:focus, select:focus { outline: 2px solid var(--accent-soft); border-col
 .rec .r-d { color: var(--ink-2); word-break: break-word; }
 .rec li.r-bad .r-k { color: var(--bad); } .rec li.r-good .r-k { color: var(--good); }
 @media (max-width: 560px) { .form2 { grid-template-columns: 1fr; } .stp-b { margin-left: 0; } }
+.warn-note { color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 6px 8px; margin: 6px 0 0; }
+.stp-h { flex-wrap: wrap; row-gap: 2px; }
+.stp-s { flex-basis: 100%; padding-left: 31px; white-space: normal; }

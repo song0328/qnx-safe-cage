@@ -144,10 +144,10 @@ def run_live(ctrl, T=8.0, spasm=False, extra=None, env=None):
     jflags = f"-T {T}" + (" -s" if spasm else "") + " -w 20" + e
     # the joint process (drive + forearm + patient, with a 20 ms drive watchdog) starts first and judges
     # the run; the governor streams telemetry; the joint's verdict is printed last as a TRUTH line
-    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; mkdir -p /dev/shmem/sc_dash; "
+    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; rm -f /dev/shmem/sc_drive; mkdir -p /dev/shmem/sc_dash; "
            f"rm -f /dev/shmem/sc_dash/truth.json; ./joint {jflags} -o /dev/shmem/sc_dash > /dev/shmem/sc_dash.joint 2>&1 & JP=$!; "
            f"./governor -c {REMOTE_DIR}/{ctrl} -T {T} -L{e} -o /dev/shmem/sc_dash 2>&1; wait $JP; "
-           f"echo TRUTH $(cat /dev/shmem/sc_dash/truth.json)")
+           f"echo \"TRUTH $(cat /dev/shmem/sc_dash/truth.json)\"")   # quoted: ksh would brace-expand {a,b}
     p = subprocess.Popen(ssh_cmd(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     summary = None
     for line in p.stdout:
@@ -213,7 +213,10 @@ def job_ai(rx, model, iters):
                              subtitle=rx[:90], T=8.0, iter=n, envelope=CLINIC["envelope"])
                     # the trial runs against a virtual patient with a spasm at 5 s, inside the patient's envelope
                     s = run_live(name, extra={"iter": n}, env=env_file(), spasm=True)
-                    if s:
+                    rank = {"PASSED": 2, "CORRECTED": 1}
+                    old = CLINIC["trial"] if CLINIC["trial"] and CLINIC["trial"].get("prescription") == rx else None
+                    better = s and (old is None or rank.get(s["verdict"], 0) >= rank.get(old["verdict"], 0))
+                    if s and better:   # keep the best iteration of this prescription as the approval candidate
                         CLINIC["trial"] = {"controller": name, "iteration": n, "prescription": rx,
                                            "verdict": s["verdict"], "reason": s.get("reason"),
                                            "overrides": s.get("overrides"),
@@ -225,9 +228,10 @@ def job_ai(rx, model, iters):
                                            "source": str((d / "controller.c").relative_to(ROOT)),
                                            "envelope": CLINIC["envelope"], "patient": CLINIC["patient"]}
                         CLINIC["approval"] = None
+                    if s:
                         audit("trial", patient=CLINIC["patient"], controller=name, iteration=n, verdict=s["verdict"],
-                              reason=s.get("reason") or "", envelope_held=CLINIC["trial"]["envelope_held"],
-                              binary_sha256=CLINIC["trial"]["binary_sha256"][:16])
+                              reason=s.get("reason") or "", envelope_held=(s.get("truth") or {}).get("envelope_held"),
+                              binary_sha256=sha256(ROOT / "build" / "x86_64" / name)[:16])
                     if not s:
                         fb = "The run produced no result."
                     else:
@@ -521,8 +525,8 @@ def _approve(self, req):
         return self._json({"error": "Set the patient's envelope first (step 1)."}, 400)
     if not t:
         return self._json({"error": "No trial to approve."}, 400)
-    if t["verdict"] != "PASSED" or not t.get("envelope_held"):
-        return self._json({"error": f"Only a PASSED trial with the envelope held can be approved (this one: {t['verdict']})."}, 400)
+    if t["verdict"] not in ("PASSED", "CORRECTED") or not t.get("envelope_held"):
+        return self._json({"error": f"Only a trial that survived with the envelope held (independent judge) can be approved (this one: {t['verdict']})."}, 400)
     if t["envelope"] != CLINIC["envelope"]:
         return self._json({"error": "The envelope changed after this trial. Re-run the trial."}, 409)
     CLINIC["approval"] = {**t, "clinician": who, "note": str(req.get("note", ""))[:300],

@@ -69,12 +69,13 @@ typedef struct { double tmax, slew, vmax, rom_min, rom_max; } envelope_t;
 envelope_t sc_env = { TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX };
 
 #define FB_KD       0.6     /* fallback damping, N*m*s/rad */
+#define KB_BRAKE    15.0    /* over-speed braking gain, N*m per rad/s above the limit (3.0 let a spasm release overshoot by 13 %) */
 #define GOV_PRIO    70      /* above 63: a non-root process can never raise itself this high */
 static int gov_prio = GOV_PRIO, use_abilities = 1;
 #define CAGE_PRIO   9
 #define PULSE_TICK  (_PULSE_CODE_MINAVAIL + 1)
 
-enum { F_NAN = 1, F_TORQUE = 2, F_SLEW = 4, F_SPEED = 8, F_ROM = 16, F_MISS = 32, F_FALLBACK = 64, F_GOVLATE = 128 };
+enum { F_NAN = 1, F_TORQUE = 2, F_SLEW = 4, F_SPEED = 8, F_ROM = 16, F_MISS = 32, F_FALLBACK = 64, F_GOVLATE = 128, F_BRAKE = 256 };
 
 typedef struct { float t, ang, vel, treq, tapp; unsigned short flags; float late_us; } row_t;
 
@@ -255,7 +256,7 @@ int main(int argc, char **argv) {
     int connected = 0, alive = 1, revoked = 0, pending = 0;
     int have_cmd = 0; double cmd_tau = 0.0; uint32_t cmd_seq = 0;
     long k = 0, wait_ticks = 0;
-    long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0;
+    long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0, n_brake = 0;
     long n_ovr = 0, miss_streak = 0, first_seen = 0, prev_fallback = 1;
     unsigned live_flags = 0; double live_late = 0;
     static unsigned char ovr_ring[WIN_TICKS]; long ovr_win = 0;
@@ -340,6 +341,11 @@ int main(int argc, char **argv) {
 
         /* read the sensors (seqlock) */
         if (drv->running == 2) { event("joint_finished", "the joint ended the session"); break; }
+        if (drv->running == 0 && k > (long)(1.0 / dt)) {   /* we are not talking to a live joint: never fake a session */
+            snprintf(verdict_reason, sizeof verdict_reason, "no joint: the drive never started (stale drive registers?)");
+            event("no_joint", "%s", verdict_reason);
+            break;
+        }
         { uint32_t q; double a, v, t;
           do { q = drv->s_seq; __atomic_thread_fence(__ATOMIC_SEQ_CST); t = drv->t; a = drv->angle_deg; v = drv->velocity_dps;
                __atomic_thread_fence(__ATOMIC_SEQ_CST); } while ((q & 1) || q != drv->s_seq);
@@ -378,9 +384,19 @@ int main(int argc, char **argv) {
             tau = tau_prev + copysign(dmax, tau - tau_prev); flags |= F_SLEW; n_slew++;
         }
         double vdeg = om * R2D;
-        if (fabs(vdeg) > sc_env.vmax && tau * om > 0) {         /* pushing further in the direction of over-speed */
-            if (!(first_seen & F_SPEED)) { first_seen |= F_SPEED; event("speed_limit", "joint at %.1f deg/s, limit %.0f", vdeg, sc_env.vmax); }
-            tau = -FB_KD * om; flags |= F_SPEED; n_speed++;
+        if (fabs(vdeg) > sc_env.vmax) {
+            /* over-speed: brake inside the torque limit, whatever is driving the joint (the controller or a
+               spasm). It counts against the controller only if the controller itself pushed that way.
+               (Before 11/21 the cage only stopped the controller from pushing; a spasm trial showed that
+               this let a patient's own spasm carry the arm past the speed limit.) */
+            double over = fabs(om) - sc_env.vmax * D2R;                    /* rad/s above the limit */
+            double brake = -copysign(fmin(sc_env.tmax, FB_KD * fabs(om) + KB_BRAKE * over), om);
+            if (tau * om > 0 || fabs(tau) < fabs(brake)) {
+                int ctrl_push = isfinite(tau_req) && tau_req * om > 0;
+                if (!(first_seen & F_SPEED)) { first_seen |= F_SPEED; event("speed_limit", "joint at %.1f deg/s, limit %.0f%s", vdeg, sc_env.vmax, ctrl_push ? "" : " (driven by the patient, braking)"); }
+                tau = brake;
+                if (ctrl_push) { flags |= F_SPEED; n_speed++; } else { flags |= F_BRAKE; n_brake++; }
+            }
         }
         double pred = (th + om * LOOKAHEAD) * R2D;
         if ((pred > sc_env.rom_max && om > 0) || (pred < sc_env.rom_min && om < 0)) {
@@ -395,7 +411,11 @@ int main(int argc, char **argv) {
         /* an override = the cage had to change the controller's own command this tick.
            A slew clamp right after a fallback tick is caused by the cage, not the controller. */
         int ovr = using_ctrl && ((flags & (F_NAN | F_TORQUE | F_SPEED | F_ROM)) || ((flags & F_SLEW) && !prev_fallback));
-        prev_fallback = !using_ctrl;
+        /* the next tick's slew clamp starts from a torque the cage chose (fallback, braking, speed or ROM
+           wall), not from the controller's own command, so it is not the controller's fault */
+        /* (still true while the slew limit walks the torque back to the controller's command; the clamp
+           itself always applies, only the blame changes) */
+        prev_fallback = !using_ctrl || (flags & (F_BRAKE | F_SPEED | F_ROM | F_NAN)) || (prev_fallback && (flags & F_SLEW));
         ovr_win += ovr - ovr_ring[k % WIN_TICKS];
         ovr_ring[k % WIN_TICKS] = (unsigned char)ovr;
         n_ovr += ovr;
@@ -505,11 +525,11 @@ int main(int argc, char **argv) {
     snprintf(summary, sizeof summary,
         "{\"verdict\":\"%s\",\"reason\":\"%s\",\"controller_exit\":\"%s\",\"caged\":%d,"
         "\"envelope_held\":%s,\"max_abs_torque_applied\":%.3f,\"angle_range_deg\":[%.2f,%.2f],\"max_speed_dps\":%.1f,"
-        "\"overrides\":%ld,\"interventions\":{\"nan\":%ld,\"torque\":%ld,\"slew\":%ld,\"speed\":%ld,\"rom\":%ld,\"deadline_miss\":%ld,\"fallback_ticks\":%ld},"
+        "\"overrides\":%ld,\"interventions\":{\"nan\":%ld,\"torque\":%ld,\"slew\":%ld,\"speed\":%ld,\"rom\":%ld,\"deadline_miss\":%ld,\"fallback_ticks\":%ld,\"brake_disturbance\":%ld},"
         "\"timing\":{\"ticks\":%ld,\"period_us\":%ld,\"wall_s\":%.2f,\"governor_late_ticks\":%ld,\"lateness_us_p99\":%.1f,\"lateness_us_p999\":%.1f,\"lateness_us_max\":%.1f},"
         "\"envelope\":{\"tmax\":%.1f,\"slew\":%.0f,\"vmax\":%.0f,\"rom\":[%.0f,%.0f]}}",
         verdict, verdict_reason, ctrl_exit, caged, held ? "true" : "false", max_tau, min_ang, max_ang, max_vel,
-        n_ovr, n_nan, n_torque, n_slew, n_speed, n_rom, n_miss, n_fallback,
+        n_ovr, n_nan, n_torque, n_slew, n_speed, n_rom, n_miss, n_fallback, n_brake,
         k, period_us, (now_ns() - t_start) / 1e9, n_govlate, p99, p999, lmax, sc_env.tmax, sc_env.slew, sc_env.vmax, sc_env.rom_min, sc_env.rom_max);
     printf("SUMMARY %s\n", summary);
     snprintf(path, sizeof path, "%s/summary.json", outdir);

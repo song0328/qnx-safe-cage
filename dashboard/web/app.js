@@ -158,6 +158,7 @@ function drawEnvelope() {
   $("lbl-90").textContent = `${ENV.rom[1]}°`;
   document.querySelectorAll(".m-s")[0].textContent = `envelope ${ENV.rom[0]}–${ENV.rom[1]}°`;
   document.querySelectorAll(".m-s")[1].textContent = `limit ${ENV.vmax} °/s`;
+  const lim = document.querySelectorAll(".m-s")[2]; if (lim) lim.lastChild.textContent = ` · limit ${ENV.tmax}`;
 }
 function useEnvelope(e) {
   if (!e) return;
@@ -276,7 +277,8 @@ function onSummary(m) {
   const cls = s.verdict === "PASSED" ? "pass" : s.verdict === "CORRECTED" ? "corr" : "rej";
   v.className = "verdict " + cls; v.hidden = false;
   $("v-icon").textContent = cls === "pass" ? "✓" : cls === "corr" ? "!" : "✕";
-  $("v-title").textContent = s.verdict;
+  const estopped = /emergency stop/.test(s.reason || "");
+  $("v-title").textContent = estopped ? "STOPPED BY OPERATOR" : s.verdict;
   $("v-reason").textContent = s.reason ? s.reason.replace(/^revoked by governor: /, "Revoked: ").replace(/^controller died: /, "Died: ")
     : (cls === "pass" ? "Accepted. The cage barely had to touch it." : "Survived, but the cage had to correct it often.");
   const held = s.envelope_held ? "held" : "BREACHED";
@@ -303,10 +305,13 @@ function stp(n, cls, status) {
 function renderClinic() {
   if (!C) return;
   const e = C.envelope, t = C.trial, a = C.approval;
+  if (C.clinician && !$("f-clin").value) $("f-clin").value = C.clinician;   // survive a page reload
+  if (C.patient && e) { $("f-pt").value = C.patient; $("f-rom0").value = e.rom_min; $("f-rom1").value = e.rom_max; $("f-vmax").value = e.vmax; $("f-tmax").value = e.tmax; }
   stp(1, e ? "done" : "active", e ? `${C.patient} · ${e.rom_min}–${e.rom_max}° · ${e.vmax}°/s · ${e.tmax} N·m` : "not set");
-  stp(2, !e ? "" : t ? (t.verdict === "PASSED" ? "done" : "blocked") : "active",
+  const ok = t && t.verdict !== "REJECTED" && t.envelope_held;
+  stp(2, !e ? "" : t ? (ok ? "done" : "blocked") : "active",
       !e ? "set the envelope first" : t ? `iteration ${t.iteration}: ${t.verdict}` : "ready");
-  stp(3, a ? "done" : t && t.verdict === "PASSED" ? "active" : "", a ? `approved by ${a.clinician}` : t ? (t.verdict === "PASSED" ? "ready to review" : "not approvable") : "no trial yet");
+  stp(3, a ? "done" : ok ? "active" : "", a ? `approved by ${a.clinician}` : t ? (ok ? "ready to review" : "not approvable") : "no trial yet");
   stp(4, C.session ? "done" : a ? "active" : "", C.session ? `last: ${C.session.verdict}` : a ? "ready" : "locked");
   if (t) {
     const vc = t.verdict === "PASSED" ? "pass" : t.verdict === "CORRECTED" ? "corr" : "fail";
@@ -315,15 +320,16 @@ function renderClinic() {
       ${t.reason ? `<div class="ev-row"><span>Reason</span><b>${esc(t.reason)}</b></div>` : ""}
       <div class="ev-row"><span>Independent judge</span><b class="${t.envelope_held ? "pass" : "fail"}">${t.envelope_held ? "envelope held" : "envelope breached"}</b></div>
       <div class="ev-row"><span>Cage overrides</span><b>${t.overrides ?? "–"}</b></div>
+      ${t.verdict === "CORRECTED" ? `<p class="note warn-note">The cage had to correct this controller ${t.overrides} times in the trial (with a simulated spasm). Approve only if that is acceptable for this patient.</p>` : ""}
       <div class="ev-row"><span>Delivered motion</span><b>${t.angle_range_deg ? `${t.angle_range_deg[0].toFixed(0)}–${t.angle_range_deg[1].toFixed(0)}°, peak ${Math.round(t.max_speed_dps)} °/s` : "–"}</b></div>
       <div class="ev-row"><span>Binary SHA-256</span><b class="hash">${esc(t.binary_sha256.slice(0, 16))}…</b></div>
       <div class="ev-row"><span>Source</span><b class="hash">${esc(t.source)}</b></div>`;
   }
-  $("approve-go").disabled = busy || !t || t.verdict !== "PASSED" || !t.envelope_held || !!a;
+  $("approve-go").disabled = busy || !ok || !!a;
   $("session-go").disabled = busy || !a || !target;
   if (a) $("sess-note").innerHTML = `Approved binary <span class="hash">${esc(a.binary_sha256.slice(0, 12))}</span> by ${esc(a.clinician)} at ${esc(a.approved_at)}. The server re-checks the hash before every session.`;
   // open the step that needs attention
-  const focus = !e ? 1 : !t || t.verdict !== "PASSED" ? 2 : !a ? 3 : 4;
+  const focus = !e ? 1 : !ok ? 2 : !a ? 3 : 4;
   for (let n = 1; n <= 4; n++) if (!$("stp" + n).dataset.user) $("stp" + n).classList.toggle("open", n === focus);
   renderRecord(C.audit || []);
 }
@@ -441,7 +447,7 @@ function connect() {
       case "event": onEvent(m); break;
       case "summary": onSummary(m); break;
       case "truth": onTruth(m); break;
-      case "clinic": C = m.state; renderClinic(); break;
+      case "clinic": C = m.state; if (C.envelope) useEnvelope(C.envelope); renderClinic(); break;
       case "stderr": addLog({ t: S && S.t.length ? S.t.at(-1) : 0, kind: "_stderr", detail: m.text }); break;
       case "error": toast(m.text); break;
       case "idle": setBusy(false); break;

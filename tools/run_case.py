@@ -47,7 +47,7 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=
     # run detached inside the target so a stalled SSH session cannot kill the run
     # each step separately: removing a /dev/shmem directory can fail, and that must not skip the run
     # no core dumps in any condition: a dump of a large crashed process fills the small /data disk
-    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; slay -f load >/dev/null 2>&1; "
+    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; slay -f load >/dev/null 2>&1; rm -f /dev/shmem/sc_drive; "
            f"rm -f {rdir}.out {rdir}.joint {rdir}.load {rdir}/*; mkdir -p {rdir}; "
            f"{load_cmd}./joint {jflags} -o {rdir} > {rdir}.joint 2>&1 & JP=$!; "
            # reaper above every governor priority: a hung single-process governor (prio 70) would otherwise
