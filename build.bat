@@ -10,7 +10,13 @@ if not exist "%OUT%" mkdir "%OUT%"
 set CC=qcc -Vgcc_ntox86_64 -O2 -Wall -I"%ROOT%qnx"
 %CC% -o "%OUT%\governor" "%ROOT%qnx\governor.c" "%ROOT%qnx\resmgr.c" -lm || (echo BUILD FAIL governor & exit /b 1)
 echo built governor
+%CC% -o "%OUT%\joint" "%ROOT%qnx\joint.c" -lm || (echo BUILD FAIL joint & exit /b 1)
+echo built joint
+%CC% -o "%OUT%\load" "%ROOT%tools\load.c" || (echo BUILD FAIL load & exit /b 1)
+echo built load
 for %%f in ("%ROOT%controllers\*.c") do (
   %CC% -o "%OUT%\%%~nf" "%ROOT%qnx\ctrl_main.c" "%%f" -lm || (echo BUILD FAIL %%~nf & exit /b 1)
   echo built %%~nf
+  rem single-process comparison build: the same controller linked INTO the governor
+  %CC% -DMONO -o "%OUT%\mono_%%~nf" "%ROOT%qnx\governor.c" "%ROOT%qnx\resmgr.c" "%%f" -lm || (echo BUILD FAIL mono_%%~nf & exit /b 1)
 )

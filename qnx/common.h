@@ -31,4 +31,27 @@ typedef struct {
     double   velocity_dps;  /* joint velocity, degrees/s */
 } sc_state_t;
 
+
+/* ---- drive registers (shared memory between the governor and the joint/drive process) ----
+ * The joint process stands in for the hardware: motor drive + forearm + patient. It owns the
+ * physics, applies whatever torque is in the command register on its own 500 Hz clock, and logs
+ * the TRUE trajectory, so whether the envelope held is judged by an observer outside the governor.
+ * Single writer per half; each half is a seqlock (odd = being written). */
+#define SC_DRIVE_SHM  "/sc_drive"
+typedef struct {
+    /* sensor half: written by the joint */
+    volatile uint32_t s_seq;
+    double   t, angle_deg, velocity_dps;
+    volatile int32_t running;      /* 0 = waiting for start, 1 = session running, 2 = finished */
+    volatile int32_t sto;          /* 1 = drive watchdog cut the torque (safe torque off) */
+    /* command half: written by the governor */
+    volatile uint32_t c_seq;
+    double   cmd_tau;              /* N*m */
+    volatile uint32_t cmd_count;   /* +1 per command write; the drive watchdog watches this */
+    volatile int32_t start;        /* governor sets 1 once the controller is connected */
+} sc_drive_t;
+
+static inline void sc_seq_begin(volatile uint32_t *q) { (*q)++; __atomic_thread_fence(__ATOMIC_SEQ_CST); }
+static inline void sc_seq_end(volatile uint32_t *q)   { __atomic_thread_fence(__ATOMIC_SEQ_CST); (*q)++; }
+
 #endif

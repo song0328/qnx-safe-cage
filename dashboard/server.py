@@ -100,8 +100,11 @@ def target_ok():
 
 
 def run_live(ctrl, T=8.0, spasm=False, extra=None):
-    flags = f"-T {T} -L" + (" -s" if spasm else "")
-    cmd = f"cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; ./governor -c {REMOTE_DIR}/{ctrl} {flags} -o /dev/shmem/sc_dash 2>&1"
+    jflags = f"-T {T}" + (" -s" if spasm else "")
+    # the joint process (drive + forearm + patient) starts first; the governor streams telemetry
+    cmd = (f"cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; mkdir -p /dev/shmem/sc_dash; "
+           f"./joint {jflags} -o /dev/shmem/sc_dash > /dev/shmem/sc_dash.joint 2>&1 & "
+           f"./governor -c {REMOTE_DIR}/{ctrl} -T {T} -L -o /dev/shmem/sc_dash 2>&1; wait")
     p = subprocess.Popen(ssh_cmd(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     summary = None
     for line in p.stdout:

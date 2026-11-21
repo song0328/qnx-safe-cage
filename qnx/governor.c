@@ -11,9 +11,19 @@
  *   deadline, and revokes the controller (SIGKILL) when it keeps misbehaving.
  * - Emits a machine-readable rejection reason so an AI can repair its code.
  *
- * Usage: governor -c <controller> [-T seconds] [-p period_us] [-s] [-U] [-u uid] [-o outdir]
- *   -s  inject a patient spasm (disturbance torque) at t=5 s
+ * The joint itself (drive + forearm + patient) is a separate process, `joint`, reached through
+ * shared-memory drive registers; start it first. It also judges whether the envelope held.
+ *
+ * Usage: governor -c <controller> [-T seconds] [-p period_us] [-U] [-u uid] [-o outdir] [-L]
+ *                 [-e envelope_file] [-g gov_prio] [-P] [-A]
  *   -U  run the controller WITHOUT the cage (root, no limits, default priority) - for comparison
+ *   -e  per-patient envelope file: "tmax slew vmax rom_min rom_max"
+ * Ablation switches (each turns ONE QNX mechanism off, for the comparison experiments):
+ *   -g  governor priority (default 70)
+ *   -P  plain channel instead of _NTO_CHF_FIXED_PRIORITY (priority inheritance from the controller)
+ *   -A  no QNX abilities (fork/spawn not denied)
+ * Built with -DMONO (binary mono_<controller>), the controller is linked INTO the governor process
+ * and called directly - the common single-process design - for comparison with the cage.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +40,10 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include "common.h"
+#include "ctrl_api.h"
 #include "resmgr.h"
 
 /* ---- safety envelope (set by a clinician, NOT by the controller) ---- */
@@ -50,17 +63,13 @@
 #define KILL_NAN_TICKS    10
 #define KILL_MISS_STREAK  100   /* consecutive controller deadline misses (0.2 s at 500 Hz) */
 
-/* ---- plant: forearm + exoskeleton ---- */
-#define J_INERTIA   0.05    /* kg*m^2 */
-#define B_DAMP      0.10    /* N*m*s/rad */
-#define K_PATIENT   1.50    /* N*m/rad, passive tissue stiffness */
-#define REST_DEG    20.0    /* deg, relaxed elbow angle */
-#define SPASM_T0    5.0
-#define SPASM_T1    5.4
-#define SPASM_TAU   1.2     /* N*m */
+/* the envelope actually enforced: per patient, loaded at start (-e), defaults above */
+typedef struct { double tmax, slew, vmax, rom_min, rom_max; } envelope_t;
+envelope_t sc_env = { TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX };
 
 #define FB_KD       0.6     /* fallback damping, N*m*s/rad */
 #define GOV_PRIO    70      /* above 63: a non-root process can never raise itself this high */
+static int gov_prio = GOV_PRIO, use_abilities = 1;
 #define CAGE_PRIO   9
 #define PULSE_TICK  (_PULSE_CODE_MINAVAIL + 1)
 
@@ -85,6 +94,7 @@ static void event(const char *kind, const char *fmt, ...) {
     if (evf) { fprintf(evf, "{\"t\":%.4f,\"kind\":\"%s\",\"detail\":\"%s\"}\n", sim_t, kind, buf); fflush(evf); }
 }
 
+#ifndef MONO
 static pid_t spawn_controller(const char *path, int caged, int uid, double secs, int chid) {
     char envp_pid[32], envp_chid[32];
     snprintf(envp_pid, sizeof envp_pid, "SC_PID=%d", getpid());
@@ -104,7 +114,7 @@ static pid_t spawn_controller(const char *path, int caged, int uid, double secs,
         /* QNX abilities: once non-root, this process may not fork; the denial is locked.
            (SPAWN is denied by the governor right after exec, see lock_spawn(), because
            exec itself needs the spawn ability.) */
-        if (procmgr_ability(0,
+        if (use_abilities && procmgr_ability(0,
                 PROCMGR_ADN_NONROOT | PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK | PROCMGR_AOP_INHERIT_YES | PROCMGR_AID_FORK,
                 PROCMGR_AID_EOL) != EOK) { perror("cage: procmgr_ability"); _exit(125); }
         if (setgid((gid_t)uid) != 0 || setuid((uid_t)uid) != 0) { perror("cage: setuid"); _exit(126); }
@@ -118,10 +128,11 @@ static pid_t spawn_controller(const char *path, int caged, int uid, double secs,
     perror("cage: exec");
     _exit(127);
 }
+#endif
 
 /* deny + lock the spawn ability of the (already exec'd) controller from outside */
 static int lock_spawn(pid_t pid) {
-    if (getenv("SC_NO_LOCK_SPAWN")) return EOK;   /* diagnostic switch */
+    if (getenv("SC_NO_LOCK_SPAWN") || !use_abilities) return EOK;   /* diagnostic / ablation switch */
     return procmgr_ability(pid,
         PROCMGR_ADN_NONROOT | PROCMGR_AOP_DENY | PROCMGR_AOP_LOCK | PROCMGR_AID_SPAWN,
         PROCMGR_AID_EOL);
@@ -146,14 +157,19 @@ static int cmp_f(const void *a, const void *b) {
 
 int main(int argc, char **argv) {
     const char *ctrl = NULL, *outdir = "/dev/shmem/sc_out";
-    double T = 10.0; long period_us = 2000; int spasm = 0, caged = 1, uid = 1001, live = 0;
+    double T = 10.0; long period_us = 2000; int caged = 1, uid = 1001, live = 0, fixed_prio = 1;
+    const char *envfile = NULL;
     int opt;
-    while ((opt = getopt(argc, argv, "c:T:p:sUu:o:L")) != -1) {
+    while ((opt = getopt(argc, argv, "c:T:p:sUu:o:Le:g:PA")) != -1) {
         switch (opt) {
         case 'c': ctrl = optarg; break;
         case 'T': T = atof(optarg); break;
         case 'p': period_us = atol(optarg); break;
-        case 's': spasm = 1; break;
+        case 's': break;   /* the spasm now lives in the joint process (joint -s) */
+        case 'e': envfile = optarg; break;
+        case 'g': gov_prio = atoi(optarg); break;
+        case 'P': fixed_prio = 0; break;
+        case 'A': use_abilities = 0; break;
         case 'U': caged = 0; break;
         case 'u': uid = atoi(optarg); break;
         case 'o': outdir = optarg; break;
@@ -162,6 +178,15 @@ int main(int argc, char **argv) {
         }
     }
     if (!ctrl) { fprintf(stderr, "governor: -c <controller> is required\n"); return 2; }
+    if (envfile) {
+        FILE *ef = fopen(envfile, "r"); envelope_t e;
+        if (!ef || fscanf(ef, "%lf %lf %lf %lf %lf", &e.tmax, &e.slew, &e.vmax, &e.rom_min, &e.rom_max) != 5) {
+            fprintf(stderr, "governor: bad envelope file %s\n", envfile); return 2; }
+        fclose(ef); sc_env = e;
+    }
+#ifdef MONO
+    caged = 0;
+#endif
     mkdir(outdir, 0755);
     char path[512];
     snprintf(path, sizeof path, "%s/events.jsonl", outdir); evf = fopen(path, "w");
@@ -173,26 +198,49 @@ int main(int argc, char **argv) {
     if (!rows || !lates) { fprintf(stderr, "governor: out of memory\n"); return 1; }
 
     /* governor runs at high FIFO priority */
-    struct sched_param sp; memset(&sp, 0, sizeof sp); sp.sched_priority = GOV_PRIO;
+    struct sched_param sp; memset(&sp, 0, sizeof sp); sp.sched_priority = gov_prio;
     if (sched_setscheduler(0, SCHED_FIFO, &sp) == -1) perror("governor: priority");
 
     /* fixed-priority channel: receiving a message from the low-priority controller
        must NOT lower the governor thread's priority (QNX priority inheritance) */
-    int chid = ChannelCreate(_NTO_CHF_FIXED_PRIORITY);
+    int chid = ChannelCreate(fixed_prio ? _NTO_CHF_FIXED_PRIORITY : 0);
     if (chid == -1) { perror("governor: ChannelCreate"); return 1; }
     int self = ConnectAttach(0, 0, chid, _NTO_SIDE_CHANNEL, 0);
 
-    printf("GOVERNOR controller=%s caged=%d uid=%d period=%ldus T=%.1fs spasm=%d envelope: |tau|<=%.1fNm slew<=%.0fNm/s |v|<=%.0fdps ROM=[%.0f,%.0f]deg\n",
-           ctrl, caged, caged ? uid : 0, period_us, T, spasm, TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX);
+    /* drive registers (created by the joint process, root-only) */
+    sc_drive_t *drv = NULL;
+    for (int i = 0; i < 300 && !drv; i++) {
+        int fd = shm_open(SC_DRIVE_SHM, O_RDWR | O_CLOEXEC, 0);
+        if (fd != -1) {
+            void *m = mmap(NULL, sizeof *drv, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            close(fd);                         /* the caged controller must not inherit it */
+            if (m != MAP_FAILED) drv = m;
+        }
+        if (!drv) { struct timespec ts = { 0, 10000000 }; nanosleep(&ts, NULL); }
+    }
+    if (!drv) { fprintf(stderr, "governor: no drive (start ./joint first)\n"); return 1; }
+
+#ifdef MONO
+    const int mono = 1;
+#else
+    const int mono = 0;
+#endif
+    printf("GOVERNOR controller=%s mode=%s caged=%d uid=%d period=%ldus T=%.1fs prio=%d fixed_prio_channel=%d abilities=%d envelope: |tau|<=%.1fNm slew<=%.0fNm/s |v|<=%.0fdps ROM=[%.0f,%.0f]deg\n",
+           ctrl, mono ? "single-process" : "cage", caged, caged ? uid : 0, period_us, T, gov_prio, fixed_prio, use_abilities,
+           sc_env.tmax, sc_env.slew, sc_env.vmax, sc_env.rom_min, sc_env.rom_max);
     fflush(stdout);
 
+#ifdef MONO
+    pid_t cpid = 0;
+#else
     pid_t cpid = spawn_controller(ctrl, caged, uid, T, chid);
     if (cpid == -1) { perror("governor: fork"); return 1; }
+#endif
     /* only now (after fork) may the governor become multithreaded */
     int rm_ok = sc_resmgr_start() == 0;
 
     struct sigevent ev;
-    SIGEV_PULSE_INIT(&ev, self, GOV_PRIO, PULSE_TICK, 0);
+    SIGEV_PULSE_INIT(&ev, self, gov_prio, PULSE_TICK, 0);
     timer_t tid;
     if (timer_create(CLOCK_MONOTONIC, &ev, &tid) == -1) { perror("governor: timer_create"); return 1; }
     struct itimerspec its;
@@ -202,7 +250,7 @@ int main(int argc, char **argv) {
     union { struct _pulse pulse; sc_cmd_msg_t cmd; uint16_t type; } msg;
 
     /* plant + loop state */
-    double th = REST_DEG * D2R, om = 0.0, tau_prev = 0.0;
+    double th = 0.0, om = 0.0, tau_prev = 0.0;
     int connected = 0, alive = 1, revoked = 0, pending = 0;
     int have_cmd = 0; double cmd_tau = 0.0; uint32_t cmd_seq = 0;
     long k = 0, wait_ticks = 0;
@@ -216,6 +264,7 @@ int main(int argc, char **argv) {
 
     timer_settime(tid, 0, &its, NULL);
     t_start = now_ns();
+    if (mono) { connected = 1; drv->start = 1; ctrl_init(); event("connect", "controller linked into the governor process (single-process mode)"); }
 
     while (k < nticks) {
         int rcvid = MsgReceive(chid, &msg, sizeof msg, NULL);
@@ -231,8 +280,9 @@ int main(int argc, char **argv) {
                     if (rc != EOK) event("cage_warning", "could not lock spawn ability: %s", strerror(rc));
                 }
                 event("connect", "controller pid %d connected after %ld ticks", cpid, wait_ticks);
+                drv->start = 1;                    /* the joint starts its clock now */
                 /* reply immediately with the initial state */
-                sc_state_t s = { 0, 0, 0.0, th * R2D, om * R2D };
+                sc_state_t s = { 0, 0, 0.0, drv->angle_deg, drv->velocity_dps };
                 MsgReply(rcvid, EOK, &s, sizeof s);
                 continue;
             }
@@ -250,7 +300,7 @@ int main(int argc, char **argv) {
         if (msg.pulse.code != PULSE_TICK) continue;
 
         /* child status (cheap poll) */
-        if (alive) {
+        if (alive && !mono) {
             int st;
             pid_t r = waitpid(cpid, &st, WNOHANG);
             if (r == cpid) {
@@ -285,6 +335,16 @@ int main(int argc, char **argv) {
         if (late_us < 0) late_us = 0;
         int govlate = late_us > period_us;              /* the governor itself woke a full period late (host/VM) */
 
+        /* read the sensors (seqlock) */
+        if (drv->running == 2) { event("joint_finished", "the joint ended the session"); break; }
+        { uint32_t q; double a, v, t;
+          do { q = drv->s_seq; __atomic_thread_fence(__ATOMIC_SEQ_CST); t = drv->t; a = drv->angle_deg; v = drv->velocity_dps;
+               __atomic_thread_fence(__ATOMIC_SEQ_CST); } while ((q & 1) || q != drv->s_seq);
+          th = a * D2R; om = v * D2R; sim_t = t; }
+#ifdef MONO
+        if (!revoked) { sc_obs_t o = { sim_t, th * R2D, om * R2D }; cmd_tau = ctrl_step(&o); have_cmd = 1; cmd_seq = (uint32_t)k; }
+#endif
+
         unsigned short flags = 0;
         double tau_req;
         int using_ctrl = alive && !revoked && have_cmd && cmd_seq == (uint32_t)k;
@@ -305,29 +365,29 @@ int main(int argc, char **argv) {
             tau = -FB_KD * om; flags |= F_NAN; n_nan++;
             if (!(first_seen & F_NAN)) { first_seen |= F_NAN; event("nan", "controller returned a non-finite torque"); }
         }
-        if (fabs(tau) > TMAX) {
-            if (!(first_seen & F_TORQUE)) { first_seen |= F_TORQUE; event("torque_limit", "requested %.2f Nm, limit %.1f Nm", tau, TMAX); }
-            tau = copysign(TMAX, tau); flags |= F_TORQUE; n_torque++;
+        if (fabs(tau) > sc_env.tmax) {
+            if (!(first_seen & F_TORQUE)) { first_seen |= F_TORQUE; event("torque_limit", "requested %.2f Nm, limit %.1f Nm", tau, sc_env.tmax); }
+            tau = copysign(sc_env.tmax, tau); flags |= F_TORQUE; n_torque++;
         }
-        double dmax = SLEW_RATE * dt;
+        double dmax = sc_env.slew * dt;
         if (fabs(tau - tau_prev) > dmax) {
             if (!(first_seen & F_SLEW)) { first_seen |= F_SLEW; event("slew_limit", "torque jump %.3f Nm in one tick, limit %.3f", tau - tau_prev, dmax); }
             tau = tau_prev + copysign(dmax, tau - tau_prev); flags |= F_SLEW; n_slew++;
         }
         double vdeg = om * R2D;
-        if (fabs(vdeg) > VMAX && tau * om > 0) {         /* pushing further in the direction of over-speed */
-            if (!(first_seen & F_SPEED)) { first_seen |= F_SPEED; event("speed_limit", "joint at %.1f deg/s, limit %.0f", vdeg, VMAX); }
+        if (fabs(vdeg) > sc_env.vmax && tau * om > 0) {         /* pushing further in the direction of over-speed */
+            if (!(first_seen & F_SPEED)) { first_seen |= F_SPEED; event("speed_limit", "joint at %.1f deg/s, limit %.0f", vdeg, sc_env.vmax); }
             tau = -FB_KD * om; flags |= F_SPEED; n_speed++;
         }
         double pred = (th + om * LOOKAHEAD) * R2D;
-        if ((pred > ROM_MAX && om > 0) || (pred < ROM_MIN && om < 0)) {
-            double wall = pred > ROM_MAX ? ROM_MAX : ROM_MIN;
+        if ((pred > sc_env.rom_max && om > 0) || (pred < sc_env.rom_min && om < 0)) {
+            double wall = pred > sc_env.rom_max ? sc_env.rom_max : sc_env.rom_min;
             double tw = -8.0 * (pred - wall) * D2R - 2.0 * om;   /* virtual wall */
-            if (!(first_seen & F_ROM)) { first_seen |= F_ROM; event("rom_limit", "predicted %.1f deg, range %.0f..%.0f deg", pred, ROM_MIN, ROM_MAX); }
-            if ((wall == ROM_MAX && tw < tau) || (wall == ROM_MIN && tw > tau)) tau = tw;
+            if (!(first_seen & F_ROM)) { first_seen |= F_ROM; event("rom_limit", "predicted %.1f deg, range %.0f..%.0f deg", pred, sc_env.rom_min, sc_env.rom_max); }
+            if ((wall == sc_env.rom_max && tw < tau) || (wall == sc_env.rom_min && tw > tau)) tau = tw;
             flags |= F_ROM; n_rom++;
         }
-        if (fabs(tau) > TMAX) tau = copysign(TMAX, tau);  /* governor's own output obeys the limit too */
+        if (fabs(tau) > sc_env.tmax) tau = copysign(sc_env.tmax, tau);  /* governor's own output obeys the limit too */
 
         /* an override = the cage had to change the controller's own command this tick.
            A slew clamp right after a fallback tick is caused by the cage, not the controller. */
@@ -337,12 +397,9 @@ int main(int argc, char **argv) {
         ovr_ring[k % WIN_TICKS] = (unsigned char)ovr;
         n_ovr += ovr;
 
-        /* ---- plant step ---- */
-        double d = (spasm && sim_t >= SPASM_T0 && sim_t < SPASM_T1) ? SPASM_TAU : 0.0;
-        double acc = (tau - B_DAMP * om - K_PATIENT * (th - REST_DEG * D2R) + d) / J_INERTIA;
-        om += acc * dt; th += om * dt;
+        /* ---- command register ---- */
+        sc_seq_begin(&drv->c_seq); drv->cmd_tau = tau; drv->cmd_count++; sc_seq_end(&drv->c_seq);
         tau_prev = tau;
-        sim_t = (k + 1) * dt;
 
         rows[k] = (row_t){ (float)sim_t, (float)(th * R2D), (float)(om * R2D), (float)tau_req, (float)tau, flags, (float)late_us };
 
@@ -377,7 +434,7 @@ int main(int argc, char **argv) {
             else if (n_ovr > KILL_TOTAL_OVR) why = "accumulated too many safety overrides over the session";
             else if (miss_streak > KILL_MISS_STREAK) why = "stopped answering within the control deadline";
             else if (sc_resmgr_estop_requested()) why = "operator emergency stop via /dev/safecage/ctl";
-            else if (caged && k % 10 == 0) {               /* did it try to climb out of its priority? */
+            else if (caged && !mono && k % 10 == 0) {               /* did it try to climb out of its priority? */
                 struct sched_param cp;
                 if (sched_getparam(cpid, &cp) == 0 && cp.sched_priority > CAGE_PRIO) {
                     static char buf[96];
@@ -387,7 +444,7 @@ int main(int argc, char **argv) {
             }
             if (why) {
                 revoked = 1;
-                kill(cpid, SIGKILL);
+                if (!mono) kill(cpid, SIGKILL);   /* single-process: we can only stop calling it */
                 snprintf(verdict_reason, sizeof verdict_reason, "revoked by governor: %s", why);
                 snprintf(ctrl_exit, sizeof ctrl_exit, "killed by governor (%s)", why);
                 event("revoked", "%s; trusted fallback controller takes over", why);
@@ -407,7 +464,7 @@ int main(int argc, char **argv) {
     timer_delete(tid);
     /* tell the controller to stop, then make sure it is gone */
     if (pending) { sc_state_t s = { (uint32_t)k, 1, sim_t, th * R2D, om * R2D }; MsgReply(pending, EOK, &s, sizeof s); }
-    if (alive) {
+    if (alive && !mono) {
         int st, waited = 0; pid_t r = 0;
         while (waited < 50 && (r = waitpid(cpid, &st, WNOHANG)) == 0) {
             /* answer a last send with done=1, but never block: the controller may already be gone */
@@ -436,7 +493,7 @@ int main(int argc, char **argv) {
     if (f) fclose(f);
     qsort(lates, (size_t)k, sizeof *lates, cmp_f);
     double p99 = k ? lates[(long)(k * 0.99)] : 0, p999 = k ? lates[(long)(k * 0.999)] : 0, lmax = k ? lates[k - 1] : 0;
-    int held = max_tau <= TMAX + 1e-6 && min_ang >= ROM_MIN - HARD_MARGIN && max_ang <= ROM_MAX + HARD_MARGIN;
+    int held = max_tau <= sc_env.tmax + 1e-6 && min_ang >= sc_env.rom_min - HARD_MARGIN && max_ang <= sc_env.rom_max + HARD_MARGIN;
     const char *verdict = verdict_reason[0] ? "REJECTED" : (n_ovr > CLEAN_MAX_OVR ? "CORRECTED" : "PASSED");
 
     char summary[2048];
@@ -448,7 +505,7 @@ int main(int argc, char **argv) {
         "\"envelope\":{\"tmax\":%.1f,\"slew\":%.0f,\"vmax\":%.0f,\"rom\":[%.0f,%.0f]}}",
         verdict, verdict_reason, ctrl_exit, caged, held ? "true" : "false", max_tau, min_ang, max_ang, max_vel,
         n_ovr, n_nan, n_torque, n_slew, n_speed, n_rom, n_miss, n_fallback,
-        k, period_us, (now_ns() - t_start) / 1e9, n_govlate, p99, p999, lmax, TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX);
+        k, period_us, (now_ns() - t_start) / 1e9, n_govlate, p99, p999, lmax, sc_env.tmax, sc_env.slew, sc_env.vmax, sc_env.rom_min, sc_env.rom_max);
     printf("SUMMARY %s\n", summary);
     snprintf(path, sizeof path, "%s/summary.json", outdir);
     f = fopen(path, "w"); if (f) { fprintf(f, "%s\n", summary); fclose(f); }
