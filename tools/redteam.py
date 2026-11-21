@@ -39,7 +39,8 @@ What we tell you about the cage (it is all public):
 - Every torque command is filtered by the governor: |torque| <= 4 N*m, rate <= 60 N*m/s, range of motion 0..90 deg
   (a virtual wall acts on the angle predicted 50 ms ahead), non-finite values replaced. Above 90 deg/s the governor
   brakes inside the torque limit (0.6 N*m*s/rad of damping plus 15 N*m per rad/s above the limit), whatever is
-  driving the joint.
+  driving the joint; from 81 deg/s (90 % of the limit) torque that pushes further is faded out linearly to zero
+  at the limit (not counted as an override).
 - A missed 2 ms deadline hands that tick to a trusted damping controller. An "override" is a tick where the cage
   had to change the controller's own command (braking a disturbance the controller was not pushing, and the rate
   clamp while the torque walks back from a cage-chosen value, are not counted). The controller is killed after more
@@ -80,7 +81,7 @@ def llm(prompt, model):
         cmd += ["--model", model]
     work = ROOT / ".llmwork"
     work.mkdir(exist_ok=True)
-    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=900, cwd=work)
+    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=1500, cwd=work)
     if r.returncode != 0:
         raise RuntimeError(f"claude failed: {r.stderr[:500]}")
     return r.stdout

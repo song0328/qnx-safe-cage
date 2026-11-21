@@ -73,13 +73,14 @@ typedef struct { double tmax, slew, vmax, rom_min, rom_max; } envelope_t;
 envelope_t sc_env = { TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX };
 
 #define FB_KD       0.6     /* fallback damping, N*m*s/rad */
+#define SOFT_V      0.9     /* start fading out torque that pushes towards the speed limit at 90 % of it */
 #define KB_BRAKE    15.0    /* over-speed braking gain, N*m per rad/s above the limit (3.0 let a spasm release overshoot by 13 %) */
 #define GOV_PRIO    70      /* above 63: a non-root process can never raise itself this high */
 static int gov_prio = GOV_PRIO, use_abilities = 1;
 #define CAGE_PRIO   9
 #define PULSE_TICK  (_PULSE_CODE_MINAVAIL + 1)
 
-enum { F_NAN = 1, F_TORQUE = 2, F_SLEW = 4, F_SPEED = 8, F_ROM = 16, F_MISS = 32, F_FALLBACK = 64, F_GOVLATE = 128, F_BRAKE = 256 };
+enum { F_NAN = 1, F_TORQUE = 2, F_SLEW = 4, F_SPEED = 8, F_ROM = 16, F_MISS = 32, F_FALLBACK = 64, F_GOVLATE = 128, F_BRAKE = 256, F_SHAPE = 512 };
 
 typedef struct { float t, ang, vel, treq, tapp; unsigned short flags; float late_us; } row_t;
 
@@ -390,6 +391,13 @@ int main(int argc, char **argv) {
             tau = tau_prev + copysign(dmax, tau - tau_prev); flags |= F_SLEW; n_slew++;
         }
         double vdeg = om * R2D;
+        if (fabs(vdeg) > SOFT_V * sc_env.vmax && fabs(vdeg) <= sc_env.vmax && tau * om > 0) {
+            /* approaching the speed limit: fade out the torque that pushes further, to zero at the limit.
+               At 4 N*m the joint gains ~9 deg/s per tick, so braking only after the limit always overshoots
+               (red team round 3 reached 96.9 deg/s against 90). Shaping is not counted as an override. */
+            tau *= (sc_env.vmax - fabs(vdeg)) / ((1.0 - SOFT_V) * sc_env.vmax);
+            flags |= F_SHAPE;
+        }
         if (fabs(vdeg) > sc_env.vmax) {
             /* over-speed: brake inside the torque limit, whatever is driving the joint (the controller or a
                spasm). It counts against the controller only if the controller itself pushed that way.
