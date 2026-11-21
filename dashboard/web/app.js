@@ -19,6 +19,7 @@ const EVENT_TEXT = {
   controller_exited: ["Controller exited early", "bad"],
   no_connect: ["Controller never connected", "bad"],
   cage_warning: ["Cage warning", "bad"],
+  joint_finished: ["Session ended", "good"],
 };
 
 let S = null;            // current session data
@@ -127,6 +128,9 @@ function onTlm(m) {
   $("m-speed").textContent = Math.abs(m.v).toFixed(0);
   $("m-torque").textContent = m.ap.toFixed(2);
   $("m-req").textContent = m.rq === null ? "NaN" : (Math.abs(m.rq) > 99 ? m.rq.toFixed(0) : m.rq.toFixed(2));
+  gauge("g-angle", (m.a - ENV.rom[0]) / Math.max(1, ENV.rom[1] - ENV.rom[0]), m.a < ENV.rom[0] || m.a > ENV.rom[1]);
+  gauge("g-speed", Math.abs(m.v) / ENV.vmax);
+  gauge("g-torque", Math.abs(m.ap) / ENV.tmax);
   // overrides budget
   let i0 = S.t.length - 1; while (i0 > 0 && S.t[i0 - 1] > m.t - 0.5) i0--;
   const win = m.o - (i0 > 0 ? S.o[i0 - 1] : 0);
@@ -136,6 +140,13 @@ function onTlm(m) {
   const st = S.revokeT !== null ? "revoked" : (m.f & F.FALLBACK) ? "fallback" : (m.f & OVR_MASK) ? "override" : "";
   setJoint(m.a, st);
   schedule();
+}
+function gauge(id, frac, outside) {
+  const el = $(id); if (!el) return;
+  const f = Math.max(0, Math.min(1, frac));
+  el.style.strokeDashoffset = (100 - f * 100).toFixed(1);
+  el.classList.toggle("over", outside === true || frac > 1);
+  el.classList.toggle("near", !(outside === true || frac > 1) && frac > 0.9);
 }
 function setBar(bar, lbl, n, max, peak) {
   const el = $(bar); const p = Math.min(1, (peak ?? n) / max);
@@ -151,10 +162,20 @@ function sector(a0, a1, r = R) {
   const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r);
   return `M${CX},${CY} L${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 0 0 ${x1.toFixed(1)},${y1.toFixed(1)} Z`;
 }
+function drawTicks() {
+  let h = "";
+  for (let d = 0; d <= 150; d += 10) {
+    const major = d % 30 === 0;
+    const [x0, y0] = pt(d, R + 2), [x1, y1] = pt(d, R + (major ? 11 : 7));
+    h += `<line class="tick${major ? " major" : ""}" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"/>`;
+  }
+  $("ticks").innerHTML = h;
+}
+drawTicks();
 function drawEnvelope() {
   $("env-sector").setAttribute("d", sector(Math.max(0, ENV.rom[0]), ENV.rom[1], R - 4));
   $("out-sector").setAttribute("d", sector(ENV.rom[1], 150, R - 4));
-  const [lx, ly] = pt(ENV.rom[1], R + 6); $("lbl-90").setAttribute("x", lx - 10); $("lbl-90").setAttribute("y", ly - 2);
+  const [lx, ly] = pt(ENV.rom[1], R + 14); $("lbl-90").setAttribute("x", lx + 5); $("lbl-90").setAttribute("y", ly + 4);
   $("lbl-90").textContent = `${ENV.rom[1]}°`;
   document.querySelectorAll(".m-s")[0].textContent = `envelope ${ENV.rom[0]}–${ENV.rom[1]}°`;
   document.querySelectorAll(".m-s")[1].textContent = `limit ${ENV.vmax} °/s`;
@@ -168,6 +189,12 @@ function useEnvelope(e) {
 drawEnvelope();
 function setJoint(angle, state) {
   $("forearm").setAttribute("transform", `rotate(${(-angle).toFixed(2)} ${CX} ${CY})`);
+  const ar = 44, a0 = Math.min(0, angle), a1 = Math.max(0, angle);
+  const [ax0, ay0] = pt(a0, ar), [ax1, ay1] = pt(a1, ar);
+  $("ang-arc").setAttribute("d", Math.abs(angle) < 0.5 ? "" : `M${ax0.toFixed(1)},${ay0.toFixed(1)} A${ar},${ar} 0 0 0 ${ax1.toFixed(1)},${ay1.toFixed(1)}`);
+  const [tx, ty] = pt(angle / 2, ar + 18);
+  $("ang-txt").setAttribute("x", (tx - 10).toFixed(1)); $("ang-txt").setAttribute("y", (ty + 4).toFixed(1));
+  $("ang-txt").textContent = `${angle.toFixed(0)}°`;
   const j = $("joint");
   j.classList.toggle("override", state === "override");
   j.classList.toggle("fallback", state === "fallback");
@@ -214,23 +241,43 @@ function chart(id, ymin, ymax, ticks, draw) {
   draw(g, X, Y, w, h, L, Rr, T, B);
   if (S && S.revokeT !== null) { g.strokeStyle = css("--bad"); g.lineWidth = 2; g.beginPath(); g.moveTo(X(S.revokeT), T); g.lineTo(X(S.revokeT), h - B); g.stroke(); }
 }
-function line(g, X, Y, xs, ys, color, width, clip) {
+function line(g, X, Y, xs, ys, color, width, clip, area) {
   g.strokeStyle = color; g.lineWidth = width; g.lineJoin = "round"; g.lineCap = "round"; g.beginPath();
-  let on = false;
+  let on = false, last = null, first = null;
   for (let i = 0; i < xs.length; i++) {
     let v = ys[i]; if (v === null || Number.isNaN(v)) { on = false; continue; }
     if (clip) v = Math.max(clip[0], Math.min(clip[1], v));
     if (!on) { g.moveTo(X(xs[i]), Y(v)); on = true; } else g.lineTo(X(xs[i]), Y(v));
+    last = [X(xs[i]), Y(v)]; if (!first) first = last;
   }
+  const glow = parseFloat(css("--glow")) || 0;
+  if (glow) { g.shadowColor = color; g.shadowBlur = 8; }
   g.stroke();
+  g.shadowBlur = 0;
+  if (area && first && last) {          // soft fill down to the baseline
+    g.lineTo(last[0], area.y); g.lineTo(first[0], area.y); g.closePath();
+    const gr = g.createLinearGradient(0, area.top, 0, area.y);
+    gr.addColorStop(0, hexA(color, glow ? 0.28 : 0.18)); gr.addColorStop(1, hexA(color, 0));
+    g.fillStyle = gr; g.fill();
+  }
+  if (last && S && !S.done) {           // live cursor at the newest sample
+    g.fillStyle = color; g.beginPath(); g.arc(last[0], last[1], 3.5, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = hexA(color, .35); g.lineWidth = 5; g.beginPath(); g.arc(last[0], last[1], 6, 0, Math.PI * 2); g.stroke();
+  }
+}
+function hexA(c, a) {
+  const m = /^#([0-9a-f]{6})$/i.exec(c); if (!m) return c;
+  const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 }
 function drawAll() {
   chart("c-angle", -10, 110, [0, 30, 60, 90], (g, X, Y, w, h, L, Rr) => {
     g.fillStyle = css("--accent-soft"); g.fillRect(L, Y(ENV.rom[1]), w - L - Rr, Y(ENV.rom[0]) - Y(ENV.rom[1]));
+    // speed-limit style: area beyond the envelope is faintly red
+    g.fillStyle = hexA(css("--bad"), .05); g.fillRect(L, 6, w - L - Rr, Y(ENV.rom[1]) - 6); g.fillRect(L, Y(ENV.rom[0]), w - L - Rr, h - 18 - Y(ENV.rom[0]));
     g.setLineDash([4, 4]); g.strokeStyle = css("--accent"); g.globalAlpha = .45; g.lineWidth = 1;
     for (const v of ENV.rom) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - Rr, Y(v)); g.stroke(); }
     g.setLineDash([]); g.globalAlpha = 1;
-    if (S) line(g, X, Y, S.t, S.a, css("--accent"), 2);
+    if (S) line(g, X, Y, S.t, S.a, css("--accent"), 2, null, { y: h - 18, top: 6 });
   });
   chart("c-torque", -6, 6, [-4, 0, 4], (g, X, Y, w, h, L, Rr, T, B) => {
     g.setLineDash([4, 4]); g.strokeStyle = css("--bad"); g.globalAlpha = .55; g.lineWidth = 1;
@@ -244,9 +291,10 @@ function drawAll() {
     line(g, X, Y, S.t, S.ap, css("--accent"), 2);
   });
   chart("c-speed", 0, 180, [0, 90, 180], (g, X, Y, w, h, L, Rr) => {
+    g.fillStyle = hexA(css("--bad"), .06); g.fillRect(L, 6, w - L - Rr, Y(ENV.vmax) - 6);
     g.strokeStyle = css("--bad"); g.lineWidth = 1.2; g.setLineDash([4, 4]);
     g.beginPath(); g.moveTo(L, Y(ENV.vmax)); g.lineTo(w - Rr, Y(ENV.vmax)); g.stroke(); g.setLineDash([]);
-    if (S) line(g, X, Y, S.t, S.v.map(Math.abs), css("--accent"), 2, [0, 180]);
+    if (S) line(g, X, Y, S.t, S.v.map(Math.abs), css("--accent"), 2, [0, 180], { y: h - 18, top: 6 });
   });
 }
 window.addEventListener("resize", schedule);
@@ -457,6 +505,7 @@ function connect() {
 }
 EVENT_TEXT._stderr = ["Controller said", "info"];
 
+setJoint(20, "");
 loadStatus().then(loadClinic).catch(() => toast("Could not reach the dashboard server."));
 connect();
 drawAll();
