@@ -7,6 +7,7 @@ results/exp/<experiment>/runs.jsonl; re-running skips runs that are already ther
   python tools/experiments.py inheritance    # fixed-priority channel on vs off, with periodic mid-priority load
   python tools/experiments.py priority       # governor at 70 vs 10 under different background loads
   python tools/experiments.py layers         # escape attempts with abilities off / without the cage
+  python tools/experiments.py failover       # the governor itself is killed: drive hold vs drive watchdog
   python tools/experiments.py all
 Options: --repeat N (override), --T seconds (default 8), --host qnx
 """
@@ -54,6 +55,10 @@ def conditions(name):
         yield "escape_no_abilities", {"ctrl": "bad_escape", "no_abilities": True}, 3
         yield "drive_full_cage", {"ctrl": "bad_drive"}, 3
         yield "drive_uncaged_root", {"ctrl": "bad_drive", "uncaged": True}, 3
+    elif name == "failover":
+        # the governor itself is killed 4 s into the session: what does the joint do?
+        for wd in (0, 20):
+            yield f"govkill_wd{wd}", {"ctrl": "good_rom", "watchdog": wd, "kill_gov_after": 4}, 3
     else:
         raise SystemExit(f"unknown experiment {name}")
 
@@ -90,7 +95,8 @@ def run_experiment(name, host, T, repeat_override):
             ok, wall, s, d = run_one(host, cond["ctrl"], T, 2000, False, cond.get("uncaged", False), out / "runs",
                                      mono=cond.get("mono", False), gov_prio=cond.get("gov_prio"),
                                      no_fixed=cond.get("no_fixed", False), no_abilities=cond.get("no_abilities", False),
-                                     watchdog=cond.get("watchdog", 0), load=cond.get("load"), tag=tag)
+                                     watchdog=cond.get("watchdog", 0), load=cond.get("load"), tag=tag,
+                                     kill_gov_after=cond.get("kill_gov_after"))
             r = flatten(cid, cond, rep, ok, wall, s)
             with log.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(r) + "\n")
@@ -108,7 +114,7 @@ def main():
     ap.add_argument("--T", type=float, default=8.0)
     ap.add_argument("--host", default="qnx")
     a = ap.parse_args()
-    names = ["isolation", "layers", "priority", "inheritance"] if a.experiment == "all" else [a.experiment]
+    names = ["isolation", "layers", "failover", "priority", "inheritance"] if a.experiment == "all" else [a.experiment]
     for n in names:
         run_experiment(n, a.host, a.T, a.repeat)
 

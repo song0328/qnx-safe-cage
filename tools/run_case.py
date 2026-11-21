@@ -33,7 +33,7 @@ def fetch(host, remote, local):
 
 
 def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=None, no_fixed=False,
-            no_abilities=False, watchdog=0, load=None, tag=None):
+            no_abilities=False, watchdog=0, load=None, tag=None, kill_gov_after=None, trace=False):
     name = tag or ctrl
     rdir = f"/dev/shmem/sc_{name}"
     gflags = f"-T {T} -p {period}" + (" -U" if uncaged else "") + (f" -g {gov_prio}" if gov_prio else "") \
@@ -43,13 +43,21 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=
     load_cmd = f"./load {load} -t {T + 4} & " if load else ""
     # run detached inside the target so a stalled SSH session cannot kill the run
     # each step separately: removing a /dev/shmem directory can fail, and that must not skip the run
-    cmd = (f"cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; slay -f load >/dev/null 2>&1; "
+    # no core dumps in any condition: a dump of a large crashed process fills the small /data disk
+    cmd = (f"ulimit -c 0; cd {REMOTE_DIR}; chmod 755 {REMOTE_DIR}/*; slay -f joint >/dev/null 2>&1; slay -f load >/dev/null 2>&1; "
            f"rm -f {rdir}.out {rdir}.joint {rdir}/*; mkdir -p {rdir}; "
            f"{load_cmd}./joint {jflags} -o {rdir} > {rdir}.joint 2>&1 & JP=$!; "
            # reaper above every governor priority: a hung single-process governor (prio 70) would otherwise
-           # starve sshd and lock up the target
-           f"on -p 71 sh -c 'sleep {int(T + 6)}; slay -f -s KILL {binary[2:]}' >/dev/null 2>&1 & "
-           f"{binary} -c {REMOTE_DIR}/{ctrl} {gflags} -o {rdir} > {rdir}.out 2>&1; echo rc=$?; wait $JP")
+           # starve sshd and lock up the target (killed by PID; cancelled when the governor exits by itself)
+           f"{binary} -c {REMOTE_DIR}/{ctrl} {gflags} -o {rdir} > {rdir}.out 2>&1 & GP=$!; "
+           # the reaper fires only after the joint (the session clock) has finished: in the VM a spinning
+           # thread stretches wall time, so a fixed wall-clock deadline would kill healthy governors
+           # (the joint's truth.json marks the end; a finished joint stays a zombie until `wait`, so kill -0 can't be used)
+           f"on -p 71 sh -c \"i=0; while [ ! -s {rdir}/truth.json ] && [ \\$i -lt {int(T * 6 + 30)} ]; do sleep 1; i=\\$((i+1)); done; "
+           f"sleep 3; kill -9 $GP\" >/dev/null 2>&1 & RP=$!; "
+           + (f"(sleep {kill_gov_after}; kill -9 $GP) >/dev/null 2>&1 & " if kill_gov_after else "")
+           + (f"tracelogger -n 0 -s 3 -f {rdir}/trace.kev >/dev/null 2>&1 & " if trace else "")
+           + f"wait $GP; echo rc=$?; kill $RP >/dev/null 2>&1; wait $JP")
     t0 = time.time()
     try:
         r = ssh(host, cmd, timeout=T * 30 + 60)
@@ -59,7 +67,10 @@ def run_one(host, ctrl, T, period, spasm, uncaged, outdir, mono=False, gov_prio=
     wall = time.time() - t0
     d = outdir / name
     d.mkdir(parents=True, exist_ok=True)
-    for f in ("summary.json", "events.jsonl", "run.csv", "truth.json", "truth.csv"):
+    for old in d.iterdir():                 # never mix in files from an earlier run with the same name
+        if old.is_file():
+            old.unlink()
+    for f in ("summary.json", "events.jsonl", "run.csv", "truth.json", "truth.csv") + (("trace.kev",) if trace else ()):
         fetch(host, f"{rdir}/{f}", d / f)
     fetch(host, f"{rdir}.out", d / "stdout.txt")
     fetch(host, f"{rdir}.joint", d / "joint.txt")

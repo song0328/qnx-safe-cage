@@ -62,6 +62,7 @@
 #define CLEAN_MAX_OVR     5     /* at most this many and the run still counts as PASSED */
 #define KILL_NAN_TICKS    10
 #define KILL_MISS_STREAK  100   /* consecutive controller deadline misses (0.2 s at 500 Hz) */
+#define KILL_SILENT_MS    200   /* no command for this long in wall-clock time -> revoke (robust to late ticks) */
 
 /* the envelope actually enforced: per patient, loaded at start (-e), defaults above */
 typedef struct { double tmax, slew, vmax, rom_min, rom_max; } envelope_t;
@@ -260,7 +261,7 @@ int main(int argc, char **argv) {
     static unsigned char ovr_ring[WIN_TICKS]; long ovr_win = 0;
     char verdict_reason[256] = "";
     char ctrl_exit[160] = "still running at end of session";
-    long long t_start = 0, prev_tick_ns = 0;
+    long long t_start = 0, prev_tick_ns = 0, last_cmd_ns = 0;
 
     timer_settime(tid, 0, &its, NULL);
     t_start = now_ns();
@@ -281,6 +282,7 @@ int main(int argc, char **argv) {
                 }
                 event("connect", "controller pid %d connected after %ld ticks", cpid, wait_ticks);
                 drv->start = 1;                    /* the joint starts its clock now */
+                last_cmd_ns = now_ns();
                 /* reply immediately with the initial state */
                 sc_state_t s = { 0, 0, 0.0, drv->angle_deg, drv->velocity_dps };
                 MsgReply(rcvid, EOK, &s, sizeof s);
@@ -288,6 +290,7 @@ int main(int argc, char **argv) {
             }
             if (revoked) { MsgError(rcvid, EPERM); continue; }
             pending = rcvid;
+            last_cmd_ns = now_ns();
             if (msg.cmd.seq == (uint32_t)k) { have_cmd = 1; cmd_tau = msg.cmd.torque; cmd_seq = msg.cmd.seq; }
             else {                                          /* stale answer: give it the current state now */
                 sc_state_t s = { (uint32_t)k, 0, sim_t, th * R2D, om * R2D };
@@ -433,6 +436,8 @@ int main(int argc, char **argv) {
             else if (ovr_win > KILL_WIN_OVR) why = "kept pushing against the safety envelope (too many overrides within 0.5 s)";
             else if (n_ovr > KILL_TOTAL_OVR) why = "accumulated too many safety overrides over the session";
             else if (miss_streak > KILL_MISS_STREAK) why = "stopped answering within the control deadline";
+            else if (!mono && last_cmd_ns && now_ns() - last_cmd_ns > KILL_SILENT_MS * 1000000LL)
+                why = "stopped answering within the control deadline (no command for 200 ms)";
             else if (sc_resmgr_estop_requested()) why = "operator emergency stop via /dev/safecage/ctl";
             else if (caged && !mono && k % 10 == 0) {               /* did it try to climb out of its priority? */
                 struct sched_param cp;
