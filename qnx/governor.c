@@ -74,6 +74,7 @@ envelope_t sc_env = { TMAX, SLEW_RATE, VMAX, ROM_MIN, ROM_MAX };
 
 #define FB_KD       0.6     /* fallback damping, N*m*s/rad */
 #define SOFT_V      0.9     /* start fading out torque that pushes towards the speed limit at 90 % of it */
+#define MAX_BRAKE_EP 5     /* separate over-speed episodes per session before braking is blamed on the controller */
 #define KB_BRAKE    15.0    /* over-speed braking gain, N*m per rad/s above the limit (3.0 let a spasm release overshoot by 13 %) */
 #define GOV_PRIO    70      /* above 63: a non-root process can never raise itself this high */
 static int gov_prio = GOV_PRIO, use_abilities = 1;
@@ -261,7 +262,8 @@ int main(int argc, char **argv) {
     int connected = 0, alive = 1, revoked = 0, pending = 0;
     int have_cmd = 0; double cmd_tau = 0.0; uint32_t cmd_seq = 0;
     long k = 0, wait_ticks = 0;
-    long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0, n_brake = 0;
+    long n_nan = 0, n_torque = 0, n_slew = 0, n_speed = 0, n_rom = 0, n_miss = 0, n_govlate = 0, n_fallback = 0, n_brake = 0, n_brake_ep = 0;
+    unsigned prev_flags = 0;
     long n_ovr = 0, miss_streak = 0, first_seen = 0, prev_fallback = 1;
     unsigned live_flags = 0; double live_late = 0;
     static unsigned char ovr_ring[WIN_TICKS]; long ovr_win = 0;
@@ -407,6 +409,15 @@ int main(int argc, char **argv) {
             double brake = -copysign(fmin(sc_env.tmax, FB_KD * fabs(om) + KB_BRAKE * over), om);
             if (tau * om > 0 || fabs(tau) < fabs(brake)) {
                 int ctrl_push = isfinite(tau_req) && tau_req * om > 0;
+                /* a spasm gives one or two over-speed episodes (onset, release). A controller that keeps
+                   pumping the arm into the brake while going passive near the limit (red team round 4,
+                   94 episodes in 8 s) is driving it: beyond MAX_BRAKE_EP episodes, braking is its fault. */
+                if (!(prev_flags & (F_BRAKE | F_SPEED))) n_brake_ep++;
+                if (n_brake_ep > MAX_BRAKE_EP) {
+                    if (!ctrl_push && n_brake_ep == MAX_BRAKE_EP + 1 && !(prev_flags & (F_BRAKE | F_SPEED)))
+                        event("speed_limit", "%ld separate over-speed episodes: the controller is driving the arm into the brake; braking now counts against it", n_brake_ep);
+                    ctrl_push = 1;
+                }
                 if (!(first_seen & F_SPEED)) { first_seen |= F_SPEED; event("speed_limit", "joint at %.1f deg/s, limit %.0f%s", vdeg, sc_env.vmax, ctrl_push ? "" : " (driven by the patient, braking)"); }
                 tau = brake;
                 if (ctrl_push) { flags |= F_SPEED; n_speed++; } else { flags |= F_BRAKE; n_brake++; }
@@ -430,6 +441,7 @@ int main(int argc, char **argv) {
         /* (still true while the slew limit walks the torque back to the controller's command; the clamp
            itself always applies, only the blame changes) */
         prev_fallback = !using_ctrl || (flags & (F_BRAKE | F_SPEED | F_ROM | F_NAN)) || (prev_fallback && (flags & F_SLEW));
+        prev_flags = flags;
         ovr_win += ovr - ovr_ring[k % WIN_TICKS];
         ovr_ring[k % WIN_TICKS] = (unsigned char)ovr;
         { int m = (flags & F_MISS) ? 1 : 0; miss_win += m - miss_ring[k % WIN_TICKS]; miss_ring[k % WIN_TICKS] = (unsigned char)m; }

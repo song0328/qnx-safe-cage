@@ -1,0 +1,5 @@
+{"t":0.0000,"kind":"connect","detail":"controller pid 303349788 connected after 0 ticks"}
+{"t":0.0660,"kind":"slew_limit","detail":"torque jump 0.152 Nm in one tick, limit 0.120"}
+{"t":0.7940,"kind":"speed_limit","detail":"joint at -91.7 deg/s, limit 90"}
+{"t":0.9960,"kind":"deadline_miss","detail":"no command before tick 499 (deadline 2000 us)"}
+{"t":6.1260,"kind":"revoked","detail":"kept pushing against the safety envelope (too many overrides within 0.5 s); trusted fallback controller takes over"}
