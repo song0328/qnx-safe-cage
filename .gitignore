@@ -15,3 +15,6 @@ results/exp/**/truth.csv
 !results/exp/isolation/runs/cage_wd0_bad_tamper_r0/*.csv
 !results/exp/isolation/runs/mono_wd0_bad_tamper_r0/*.csv
 !results/clinic/
+!results/exp-archive/
+results/exp-archive/**/run.csv
+results/exp-archive/**/truth.csv

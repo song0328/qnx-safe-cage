@@ -296,6 +296,23 @@ def failover_section(rows):
     return "\n".join(out) + "\n"
 
 
+def disturbance_section(rows):
+    if not rows:
+        return ""
+    out = ["## E6 - A patient spasm on top of the controller\n",
+           "Spasm: +1.2 N*m for 0.4 s at t = 5 s, then released. The governor brakes over-speed inside the torque "
+           "limit whatever drives it; braking a disturbance does not count against the controller.\n",
+           "| Condition | n | Envelope held (judge) | Peak speed (max) | Verdicts | Disturbance braking ticks (median) |",
+           "|---|---|---|---|---|---|"]
+    for cid, rs in by_cond(rows).items():
+        held = sum(1 for r in rs if truth(r, "envelope_held"))
+        vmax = max((truth(r, "max_speed_dps") or 0) for r in rs)
+        v = ", ".join(f"{k} {n}" for k, n in collections.Counter(r.get("verdict") for r in rs).most_common())
+        br = med([(r.get("interventions") or {}).get("brake_disturbance") for r in rs])
+        out.append(f"| {cid} | {len(rs)} | {held}/{len(rs)} | {fmt(vmax, 1)} deg/s | {v} | {fmt(br)} |")
+    return "\n".join(out) + "\n"
+
+
 def load_check(rows):
     """Proof that the background load actually ran during each session."""
     ran, total = 0, 0
@@ -322,6 +339,7 @@ def main():
                               "With a plain channel, receiving the controller's message hands the governor thread the controller's priority."))
     parts.append(layers_section(load("layers")))
     parts.append(failover_section(load("failover")))
+    parts.append(disturbance_section(load("disturbance")))
     figs = figures()
     for f in figs:
         parts.append(f"![{f.stem}]({f.name})\n")

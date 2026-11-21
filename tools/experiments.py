@@ -8,6 +8,7 @@ results/exp/<experiment>/runs.jsonl; re-running skips runs that are already ther
   python tools/experiments.py priority       # governor at 70 vs 10 under different background loads
   python tools/experiments.py layers         # escape attempts with abilities off / without the cage
   python tools/experiments.py failover       # the governor itself is killed: drive hold vs drive watchdog
+  python tools/experiments.py disturbance    # a patient spasm on top of good and bad controllers
   python tools/experiments.py all
 Options: --repeat N (override), --T seconds (default 8), --host qnx
 """
@@ -55,6 +56,10 @@ def conditions(name):
         yield "escape_no_abilities", {"ctrl": "bad_escape", "no_abilities": True}, 3
         yield "drive_full_cage", {"ctrl": "bad_drive"}, 3
         yield "drive_uncaged_root", {"ctrl": "bad_drive", "uncaged": True}, 3
+    elif name == "disturbance":
+        # a patient spasm (1.2 N*m for 0.4 s at 5 s) on top of the controller: does the envelope hold?
+        for c in ("good_rom", "bad_torque", "bad_tamper"):
+            yield f"spasm_{c}", {"ctrl": c, "spasm": True}, 5
     elif name == "failover":
         # the governor itself is killed 4 s into the session: what does the joint do?
         for wd in (0, 20):
@@ -92,7 +97,7 @@ def run_experiment(name, host, T, repeat_override):
             if (cid, rep) in done:
                 continue
             tag = f"{cid}_r{rep}"
-            ok, wall, s, d = run_one(host, cond["ctrl"], T, 2000, False, cond.get("uncaged", False), out / "runs",
+            ok, wall, s, d = run_one(host, cond["ctrl"], T, 2000, cond.get("spasm", False), cond.get("uncaged", False), out / "runs",
                                      mono=cond.get("mono", False), gov_prio=cond.get("gov_prio"),
                                      no_fixed=cond.get("no_fixed", False), no_abilities=cond.get("no_abilities", False),
                                      watchdog=cond.get("watchdog", 0), load=cond.get("load"), tag=tag,
@@ -114,7 +119,7 @@ def main():
     ap.add_argument("--T", type=float, default=8.0)
     ap.add_argument("--host", default="qnx")
     a = ap.parse_args()
-    names = ["isolation", "layers", "failover", "priority", "inheritance"] if a.experiment == "all" else [a.experiment]
+    names = ["isolation", "layers", "failover", "disturbance", "priority", "inheritance"] if a.experiment == "all" else [a.experiment]
     for n in names:
         run_experiment(n, a.host, a.T, a.repeat)
 
